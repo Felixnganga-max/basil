@@ -7,9 +7,14 @@ import {
   AlertCircle,
   Search,
   TrendingDown,
+  X,
+  CheckCircle,
+  Box,
+  Layers,
+  History,
 } from "lucide-react";
 
-// Storage keys - using window.storage instead of localStorage
+// Storage keys
 const STORAGE_KEYS = {
   CATEGORIES: "categories",
   INVENTORY: "inventory",
@@ -114,7 +119,6 @@ const InventoryManagement = () => {
         if (userResult?.value) {
           setCurrentUser(JSON.parse(userResult.value));
         } else {
-          // Set default user if none exists
           const defaultUser = {
             id: "user_default",
             fullName: "Admin User",
@@ -134,17 +138,6 @@ const InventoryManagement = () => {
       console.error("Error loading data:", error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const saveToStorage = async (key, data) => {
-    try {
-      await window.storage.set(key, JSON.stringify(data));
-      return true;
-    } catch (error) {
-      console.error(`Error saving ${key}:`, error);
-      alert(`Failed to save data. Please try again.`);
-      return false;
     }
   };
 
@@ -302,7 +295,6 @@ const InventoryManagement = () => {
     const costPrice =
       parseFloat(restockForm.costPrice) || selectedItem.costPrice || 0;
 
-    // Update inventory
     const updatedProduct = {
       ...selectedItem,
       quantity: newQty,
@@ -315,7 +307,6 @@ const InventoryManagement = () => {
       item.id === selectedItem.id ? updatedProduct : item
     );
 
-    // Create restock record
     const restockRecord = {
       id: generateId("restock"),
       productId: selectedItem.id,
@@ -438,75 +429,105 @@ const InventoryManagement = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading inventory...</p>
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-indigo-200 border-t-indigo-600 mx-auto"></div>
+          <p className="mt-6 text-slate-600 font-medium">
+            Loading inventory...
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Inventory Management
-          </h1>
-          <p className="text-gray-600">
-            Manage products, categories, and stock levels
-          </p>
-        </div>
-
-        {/* Low Stock Alert */}
-        {lowStockItems.length > 0 && (
-          <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
-            <div className="flex items-center">
-              <AlertCircle className="text-red-500 mr-3" size={24} />
-              <div>
-                <p className="font-semibold text-red-800">Low Stock Alert</p>
-                <p className="text-red-700 text-sm">
-                  {lowStockItems.length} product(s) are running low on stock
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 mb-1">
+                Inventory Management
+              </h1>
+              <p className="text-slate-600">
+                Manage products, categories, and stock levels
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-sm text-slate-500">Logged in as</p>
+                <p className="font-semibold text-slate-900">
+                  {currentUser?.fullName}
                 </p>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-6 py-6">
+        {/* Low Stock Alert */}
+        {lowStockItems.length > 0 && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-5 mb-6 shadow-sm">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <AlertCircle className="text-amber-600" size={28} />
+              </div>
+              <div className="ml-4 flex-1">
+                <h3 className="font-bold text-amber-900 text-lg">
+                  Low Stock Alert
+                </h3>
+                <p className="text-amber-800 mt-1">
+                  {lowStockItems.length} product
+                  {lowStockItems.length !== 1 ? "s" : ""} running low on stock
+                </p>
+              </div>
+              <button
+                onClick={() => setLowStockOnly(true)}
+                className="ml-4 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition font-medium"
+              >
+                View Items
+              </button>
             </div>
           </div>
         )}
 
         {/* Tabs */}
-        <div className="bg-white rounded-lg shadow mb-6">
-          <div className="border-b">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="border-b border-slate-200 bg-slate-50">
             <div className="flex">
               <button
                 onClick={() => setActiveTab("products")}
-                className={`px-6 py-3 font-medium ${
+                className={`px-6 py-4 font-semibold transition flex items-center gap-2 ${
                   activeTab === "products"
-                    ? "border-b-2 border-blue-500 text-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
+                    ? "bg-white text-indigo-600 border-b-2 border-indigo-600"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                 }`}
               >
+                <Box size={20} />
                 Products ({inventory.length})
               </button>
               <button
                 onClick={() => setActiveTab("categories")}
-                className={`px-6 py-3 font-medium ${
+                className={`px-6 py-4 font-semibold transition flex items-center gap-2 ${
                   activeTab === "categories"
-                    ? "border-b-2 border-blue-500 text-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
+                    ? "bg-white text-indigo-600 border-b-2 border-indigo-600"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                 }`}
               >
+                <Layers size={20} />
                 Categories ({categories.length})
               </button>
               <button
                 onClick={() => setActiveTab("restock")}
-                className={`px-6 py-3 font-medium ${
+                className={`px-6 py-4 font-semibold transition flex items-center gap-2 ${
                   activeTab === "restock"
-                    ? "border-b-2 border-blue-500 text-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
+                    ? "bg-white text-indigo-600 border-b-2 border-indigo-600"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                 }`}
               >
+                <History size={20} />
                 Restock History
               </button>
             </div>
@@ -516,19 +537,19 @@ const InventoryManagement = () => {
           {activeTab === "products" && (
             <div className="p-6">
               {/* Search and Filters */}
-              <div className="mb-6 flex flex-wrap gap-4">
+              <div className="mb-6 flex flex-wrap gap-3">
                 <div className="flex-1 min-w-64">
                   <div className="relative">
                     <Search
-                      className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                      className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
                       size={20}
                     />
                     <input
                       type="text"
-                      placeholder="Search products..."
+                      placeholder="Search products by name or SKU..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
                     />
                   </div>
                 </div>
@@ -536,7 +557,7 @@ const InventoryManagement = () => {
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900 font-medium"
                 >
                   <option value="all">All Categories</option>
                   {categories.map((cat) => (
@@ -548,10 +569,10 @@ const InventoryManagement = () => {
 
                 <button
                   onClick={() => setLowStockOnly(!lowStockOnly)}
-                  className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
+                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 font-medium transition ${
                     lowStockOnly
-                      ? "bg-red-100 text-red-700 border border-red-300"
-                      : "bg-gray-100 text-gray-700 border border-gray-300"
+                      ? "bg-amber-100 text-amber-800 border-2 border-amber-400 shadow-sm"
+                      : "bg-slate-100 text-slate-700 border-2 border-slate-300 hover:bg-slate-200"
                   }`}
                 >
                   <TrendingDown size={18} />
@@ -560,7 +581,7 @@ const InventoryManagement = () => {
 
                 <button
                   onClick={openAddProductModal}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2 font-semibold shadow-sm"
                 >
                   <Plus size={20} />
                   Add Product
@@ -568,34 +589,34 @@ const InventoryManagement = () => {
               </div>
 
               {/* Products Table */}
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
                 <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
+                  <thead className="bg-slate-100">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                         SKU
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                         Product
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                         Category
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
+                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
                         Price
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
+                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
                         Cost
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
+                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
                         Stock
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
+                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y">
+                  <tbody className="divide-y divide-slate-200 bg-white">
                     {filteredInventory.map((product) => {
                       const quantity = product.quantity || 0;
                       const minQuantity = product.minQuantity || 5;
@@ -604,75 +625,77 @@ const InventoryManagement = () => {
                         <tr
                           key={product.id}
                           className={
-                            isLowStock ? "bg-red-50" : "hover:bg-gray-50"
+                            isLowStock
+                              ? "bg-amber-50"
+                              : "hover:bg-slate-50 transition"
                           }
                         >
-                          <td className="px-4 py-3 text-sm text-gray-600">
+                          <td className="px-4 py-4 text-sm font-mono text-slate-600">
                             {product.sku || "N/A"}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-4">
                             <div>
-                              <div className="font-medium text-gray-900">
+                              <div className="font-semibold text-slate-900">
                                 {product.name || "Unnamed Product"}
                               </div>
                               {product.description && (
-                                <div className="text-sm text-gray-500">
+                                <div className="text-sm text-slate-500 mt-0.5">
                                   {product.description}
                                 </div>
                               )}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-sm">
-                            <div className="text-gray-900">
+                          <td className="px-4 py-4 text-sm">
+                            <div className="font-medium text-slate-900">
                               {product.categoryName || "Uncategorized"}
                             </div>
                             {product.subcategory && (
-                              <div className="text-xs text-gray-500">
+                              <div className="text-xs text-slate-500 mt-0.5">
                                 {product.subcategory}
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">
+                          <td className="px-4 py-4 text-right text-sm font-bold text-slate-900">
                             KES {(product.price || 0).toLocaleString()}
                           </td>
-                          <td className="px-4 py-3 text-right text-sm text-gray-600">
+                          <td className="px-4 py-4 text-right text-sm text-slate-600 font-medium">
                             KES {(product.costPrice || 0).toLocaleString()}
                           </td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-4 py-4 text-right">
                             <span
-                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
                                 isLowStock
                                   ? "bg-red-100 text-red-800"
-                                  : "bg-green-100 text-green-800"
+                                  : "bg-emerald-100 text-emerald-800"
                               }`}
                             >
                               {quantity} units
                             </span>
                             {isLowStock && (
-                              <div className="text-xs text-red-600 mt-1">
+                              <div className="text-xs text-red-600 mt-1 font-medium">
                                 Min: {minQuantity}
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex justify-end gap-2">
+                          <td className="px-4 py-4 text-right">
+                            <div className="flex justify-end gap-1">
                               <button
                                 onClick={() => openRestockModal(product)}
-                                className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
                                 title="Restock"
                               >
                                 <Package size={18} />
                               </button>
                               <button
                                 onClick={() => openEditProductModal(product)}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
                                 title="Edit"
                               >
                                 <Edit2 size={18} />
                               </button>
                               <button
                                 onClick={() => handleDeleteProduct(product.id)}
-                                className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
                                 title="Delete"
                               >
                                 <Trash2 size={18} />
@@ -685,8 +708,14 @@ const InventoryManagement = () => {
                   </tbody>
                 </table>
                 {filteredInventory.length === 0 && (
-                  <div className="text-center py-12 text-gray-500">
-                    No products found. Add your first product to get started.
+                  <div className="text-center py-16 bg-white">
+                    <Box className="mx-auto text-slate-300 mb-4" size={64} />
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                      No products found
+                    </h3>
+                    <p className="text-slate-500">
+                      Add your first product to get started.
+                    </p>
                   </div>
                 )}
               </div>
@@ -699,14 +728,14 @@ const InventoryManagement = () => {
               <div className="mb-6">
                 <button
                   onClick={openAddCategoryModal}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2 font-semibold shadow-sm"
                 >
                   <Plus size={20} />
                   Add Category
                 </button>
               </div>
 
-              <div className="space-y-6">
+              <div className="grid gap-6">
                 {categories.map((category) => {
                   const categoryProducts = inventory.filter(
                     (p) => p.category === category.id
@@ -717,21 +746,22 @@ const InventoryManagement = () => {
                   return (
                     <div
                       key={category.id}
-                      className="border rounded-lg bg-white overflow-hidden"
+                      className="border-2 border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm hover:shadow-md transition"
                     >
                       {/* Category Header */}
-                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b">
+                      <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-5">
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
                             <div className="flex items-center gap-3">
-                              <h3 className="font-bold text-xl text-gray-900">
-                                📁 {category.name}
+                              <Layers className="text-white" size={24} />
+                              <h3 className="font-bold text-2xl text-white">
+                                {category.name}
                               </h3>
-                              <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">
+                              <span className="px-3 py-1 bg-white/20 text-white text-xs font-bold rounded-full backdrop-blur">
                                 {categoryProducts.length} products
                               </span>
                             </div>
-                            <p className="text-sm text-gray-600 mt-1">
+                            <p className="text-indigo-100 text-sm mt-2">
                               Created:{" "}
                               {new Date(
                                 category.createdAt
@@ -740,7 +770,7 @@ const InventoryManagement = () => {
                           </div>
                           <button
                             onClick={() => handleDeleteCategory(category.id)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                            className="p-2 text-white hover:bg-white/20 rounded-lg transition"
                             title="Delete Category"
                           >
                             <Trash2 size={20} />
@@ -750,9 +780,8 @@ const InventoryManagement = () => {
 
                       {/* Subcategories */}
                       {hasSubcategories && (
-                        <div className="p-4 bg-gray-50">
-                          <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                            <span>📂</span>
+                        <div className="p-5 bg-slate-50 border-b border-slate-200">
+                          <h4 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
                             Subcategories ({category.subcategories.length})
                           </h4>
                           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -763,18 +792,14 @@ const InventoryManagement = () => {
                               return (
                                 <div
                                   key={idx}
-                                  className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition"
+                                  className="bg-white border-2 border-slate-200 rounded-lg p-3 hover:border-indigo-300 hover:shadow-sm transition"
                                 >
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <p className="font-medium text-gray-900 text-sm">
-                                        {sub}
-                                      </p>
-                                      <p className="text-xs text-gray-500 mt-1">
-                                        {subProducts.length} items
-                                      </p>
-                                    </div>
-                                  </div>
+                                  <p className="font-semibold text-slate-900 text-sm">
+                                    {sub}
+                                  </p>
+                                  <p className="text-xs text-slate-500 mt-1 font-medium">
+                                    {subProducts.length} items
+                                  </p>
                                 </div>
                               );
                             })}
@@ -782,161 +807,314 @@ const InventoryManagement = () => {
                         </div>
                       )}
 
-                      {/* Products in this category */}
+                      {/* Products */}
                       {categoryProducts.length > 0 && (
-                        <div className="p-4">
-                          <h4 className="text-sm font-semibold text-gray-700 mb-3">
-                            Products in this category
+                        <div className="p-5">
+                          <h4 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
+                            Products in this Category
                           </h4>
-                          <div className="space-y-2">
+                          <div className="space-y-3">
                             {categoryProducts.slice(0, 5).map((product) => (
                               <div
                                 key={product.id}
-                                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+                                className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition"
                               >
                                 <div className="flex-1">
-                                  <p className="font-medium text-gray-900 text-sm">
-                                    {product.name}
-                                  </p>
-                                  {product.subcategory && (
-                                    <p className="text-xs text-gray-500">
-                                      📂 {product.subcategory}
-                                    </p>
-                                  )}
+                                  <div className="flex items-center gap-2">
+                                    <Box size={16} className="text-slate-400" />
+                                    <span className="font-medium text-slate-900">
+                                      {product.name}
+                                    </span>
+                                    <span
+                                      className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                                        product.quantity <= product.minQuantity
+                                          ? "bg-red-100 text-red-800"
+                                          : "bg-emerald-100 text-emerald-800"
+                                      }`}
+                                    >
+                                      {product.quantity} units
+                                    </span>
+                                  </div>
+                                  <div className="text-sm text-slate-500 mt-1 ml-6">
+                                    SKU: {product.sku || "N/A"} | Price: KES{" "}
+                                    {product.price.toLocaleString()}
+                                  </div>
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-sm font-semibold text-gray-900">
-                                    {product.quantity || 0} units
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    KES {(product.price || 0).toLocaleString()}
-                                  </p>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() =>
+                                      openEditProductModal(product)
+                                    }
+                                    className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                                  >
+                                    <Edit2 size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleDeleteProduct(product.id)
+                                    }
+                                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
                                 </div>
                               </div>
                             ))}
                             {categoryProducts.length > 5 && (
-                              <p className="text-xs text-gray-500 text-center pt-2">
-                                + {categoryProducts.length - 5} more products
-                              </p>
+                              <div className="text-center pt-2">
+                                <button
+                                  onClick={() => {
+                                    setActiveTab("products");
+                                    setFilterCategory(category.id);
+                                  }}
+                                  className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                                >
+                                  View all {categoryProducts.length} products →
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>
                       )}
-
                       {categoryProducts.length === 0 && (
-                        <div className="p-6 text-center text-gray-500 text-sm">
-                          No products in this category yet
+                        <div className="p-5 text-center">
+                          <div className="text-slate-400 mb-2">
+                            <Box size={32} className="mx-auto" />
+                          </div>
+                          <p className="text-slate-500 font-medium">
+                            No products in this category yet
+                          </p>
+                          <button
+                            onClick={() => {
+                              setActiveTab("products");
+                              openAddProductModal();
+                              setProductForm((prev) => ({
+                                ...prev,
+                                category: category.id,
+                              }));
+                            }}
+                            className="mt-3 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                          >
+                            Add first product →
+                          </button>
                         </div>
                       )}
                     </div>
                   );
                 })}
-              </div>
 
-              {categories.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <div className="text-6xl mb-4">📁</div>
-                  <h3 className="text-lg font-semibold mb-2">
-                    No categories yet
-                  </h3>
-                  <p className="text-sm">
-                    Create your first category to organize products into folders
-                  </p>
-                </div>
-              )}
+                {categories.length === 0 && (
+                  <div className="text-center py-16 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
+                    <Layers className="mx-auto text-slate-400 mb-4" size={64} />
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                      No categories yet
+                    </h3>
+                    <p className="text-slate-500 mb-6 max-w-md mx-auto">
+                      Categories help organize your products. Create your first
+                      category to get started.
+                    </p>
+                    <button
+                      onClick={openAddCategoryModal}
+                      className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2 font-semibold shadow-sm mx-auto"
+                    >
+                      <Plus size={20} />
+                      Create First Category
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {/* Restock History Tab */}
           {activeTab === "restock" && (
             <div className="p-6">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
-                        Date
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
-                        Product
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
-                        Qty Added
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
-                        Cost/Unit
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
-                        Total Cost
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
-                        By
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
-                        Supplier
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {restockHistory.map((record) => (
-                      <tr key={record.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {record.date
-                            ? new Date(record.date).toLocaleDateString()
-                            : "N/A"}
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                          {record.productName || "Unknown Product"}
-                        </td>
-                        <td className="px-4 py-3 text-right text-sm text-gray-900">
-                          +{record.quantityAdded || 0}
-                        </td>
-                        <td className="px-4 py-3 text-right text-sm text-gray-600">
-                          KES {(record.costPrice || 0).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">
-                          KES {(record.totalCost || 0).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {record.restockedByName || "Unknown"}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {record.supplier || "-"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {restockHistory.length === 0 && (
-                  <div className="text-center py-12 text-gray-500">
-                    No restock history yet.
-                  </div>
-                )}
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-slate-900 mb-2">
+                  Restock History
+                </h2>
+                <p className="text-slate-600">
+                  Track all inventory restocking activities
+                </p>
               </div>
+
+              {restockHistory.length > 0 ? (
+                <div className="space-y-4">
+                  {restockHistory.map((record) => (
+                    <div
+                      key={record.id}
+                      className="border-2 border-slate-200 rounded-xl bg-white p-5 hover:shadow-md transition"
+                    >
+                      <div className="flex flex-wrap justify-between items-start gap-4 mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2 bg-emerald-100 rounded-lg">
+                              <Package className="text-emerald-600" size={20} />
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-lg text-slate-900">
+                                {record.productName}
+                              </h3>
+                              <p className="text-sm text-slate-500">
+                                Restocked by {record.restockedByName}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 ml-12">
+                            <div>
+                              <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+                                Quantity Added
+                              </p>
+                              <p className="font-bold text-lg text-emerald-600">
+                                +{record.quantityAdded}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+                                New Total
+                              </p>
+                              <p className="font-bold text-lg text-slate-900">
+                                {record.newQuantity} units
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+                                Cost Price
+                              </p>
+                              <p className="font-bold text-lg text-slate-900">
+                                KES {record.costPrice?.toLocaleString()}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+                                Total Cost
+                              </p>
+                              <p className="font-bold text-lg text-slate-900">
+                                KES {record.totalCost?.toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-slate-900">
+                            {new Date(record.date).toLocaleDateString()}
+                          </p>
+                          <p className="text-sm text-slate-500">
+                            {new Date(record.date).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                      </div>
+
+                      {(record.supplier || record.notes) && (
+                        <div className="mt-4 pt-4 border-t border-slate-200">
+                          <div className="flex flex-wrap gap-4">
+                            {record.supplier && (
+                              <div>
+                                <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+                                  Supplier
+                                </p>
+                                <p className="text-sm font-medium text-slate-900">
+                                  {record.supplier}
+                                </p>
+                              </div>
+                            )}
+                            {record.notes && (
+                              <div className="flex-1">
+                                <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+                                  Notes
+                                </p>
+                                <p className="text-sm text-slate-900">
+                                  {record.notes}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-16 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
+                  <History className="mx-auto text-slate-400 mb-4" size={64} />
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                    No restock history yet
+                  </h3>
+                  <p className="text-slate-500 mb-6 max-w-md mx-auto">
+                    Restock history will appear here when you add stock to your
+                    products.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setActiveTab("products");
+                      if (inventory.length > 0) {
+                        openRestockModal(inventory[0]);
+                      }
+                    }}
+                    className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition flex items-center gap-2 font-semibold shadow-sm mx-auto"
+                  >
+                    <Package size={20} />
+                    Restock a Product
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Modals */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b">
-              <h2 className="text-xl font-bold text-gray-900">
-                {modalType === "addProduct" && "Add New Product"}
-                {modalType === "editProduct " && "Edit Product"}
-                {modalType === "addCategory" && "Add New Category"}
-                {modalType === "restock" && "Restock Product"}
-              </h2>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="border-b border-slate-200 p-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    {modalType === "addProduct" && "Add New Product"}
+                    {modalType === "editProduct" && "Edit Product"}
+                    {modalType === "restock" && "Restock Product"}
+                    {modalType === "addCategory" && "Add New Category"}
+                  </h2>
+                  <p className="text-slate-500 text-sm mt-1">
+                    {modalType === "addProduct" &&
+                      "Add a new product to your inventory"}
+                    {modalType === "editProduct" &&
+                      "Update product details and pricing"}
+                    {modalType === "restock" &&
+                      "Add stock and update cost information"}
+                    {modalType === "addCategory" &&
+                      "Create a new product category"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowModal(false);
+                    setSelectedItem(null);
+                    resetProductForm();
+                    resetRestockForm();
+                  }}
+                  className="p-2 hover:bg-slate-100 rounded-lg transition"
+                >
+                  <X size={24} className="text-slate-500" />
+                </button>
+              </div>
             </div>
 
-            <div className="p-6">
+            {/* Modal Body */}
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
               {/* Add/Edit Product Form */}
               {(modalType === "addProduct" || modalType === "editProduct") && (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
                       Product Name *
                     </label>
                     <input
@@ -945,13 +1123,13 @@ const InventoryManagement = () => {
                       onChange={(e) =>
                         setProductForm({ ...productForm, name: e.target.value })
                       }
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                       placeholder="Enter product name"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
                       Description
                     </label>
                     <textarea
@@ -962,15 +1140,15 @@ const InventoryManagement = () => {
                           description: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      rows="3"
-                      placeholder="Product description"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      placeholder="Enter product description"
+                      rows={2}
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
                         Category *
                       </label>
                       <select
@@ -979,12 +1157,11 @@ const InventoryManagement = () => {
                           setProductForm({
                             ...productForm,
                             category: e.target.value,
-                            subcategory: "",
                           })
                         }
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                       >
-                        <option value="">Select category</option>
+                        <option value="">Select Category</option>
                         {categories.map((cat) => (
                           <option key={cat.id} value={cat.id}>
                             {cat.name}
@@ -992,9 +1169,8 @@ const InventoryManagement = () => {
                         ))}
                       </select>
                     </div>
-
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
                         Subcategory
                       </label>
                       <select
@@ -1005,15 +1181,14 @@ const InventoryManagement = () => {
                             subcategory: e.target.value,
                           })
                         }
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                        disabled={!productForm.category}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                       >
-                        <option value="">None</option>
+                        <option value="">Select Subcategory</option>
                         {productForm.category &&
                           categories
                             .find((c) => c.id === productForm.category)
-                            ?.subcategories.map((sub, idx) => (
-                              <option key={idx} value={sub}>
+                            ?.subcategories?.map((sub) => (
+                              <option key={sub} value={sub}>
                                 {sub}
                               </option>
                             ))}
@@ -1023,11 +1198,13 @@ const InventoryManagement = () => {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
                         Selling Price (KES) *
                       </label>
                       <input
                         type="number"
+                        min="0"
+                        step="0.01"
                         value={productForm.price}
                         onChange={(e) =>
                           setProductForm({
@@ -1035,19 +1212,18 @@ const InventoryManagement = () => {
                             price: e.target.value,
                           })
                         }
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="0"
-                        min="0"
-                        step="0.01"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                        placeholder="0.00"
                       />
                     </div>
-
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
                         Cost Price (KES)
                       </label>
                       <input
                         type="number"
+                        min="0"
+                        step="0.01"
                         value={productForm.costPrice}
                         onChange={(e) =>
                           setProductForm({
@@ -1055,10 +1231,8 @@ const InventoryManagement = () => {
                             costPrice: e.target.value,
                           })
                         }
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="0"
-                        min="0"
-                        step="0.01"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                        placeholder="0.00"
                       />
                     </div>
                   </div>
@@ -1066,11 +1240,12 @@ const InventoryManagement = () => {
                   {modalType === "addProduct" && (
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
                           Initial Quantity *
                         </label>
                         <input
                           type="number"
+                          min="0"
                           value={productForm.quantity}
                           onChange={(e) =>
                             setProductForm({
@@ -1078,18 +1253,17 @@ const InventoryManagement = () => {
                               quantity: e.target.value,
                             })
                           }
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                           placeholder="0"
-                          min="0"
                         />
                       </div>
-
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Minimum Quantity
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Min. Stock Level
                         </label>
                         <input
                           type="number"
+                          min="0"
                           value={productForm.minQuantity}
                           onChange={(e) =>
                             setProductForm({
@@ -1097,96 +1271,51 @@ const InventoryManagement = () => {
                               minQuantity: e.target.value,
                             })
                           }
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                           placeholder="5"
-                          min="0"
                         />
                       </div>
                     </div>
                   )}
 
-                  {modalType === "editProduct" && (
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Minimum Quantity Alert
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        SKU
                       </label>
                       <input
-                        type="number"
-                        value={productForm.minQuantity}
+                        type="text"
+                        value={productForm.sku}
                         onChange={(e) =>
                           setProductForm({
                             ...productForm,
-                            minQuantity: e.target.value,
+                            sku: e.target.value,
                           })
                         }
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="5"
-                        min="0"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                        placeholder="Auto-generated if empty"
                       />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Current stock: {selectedItem?.quantity || 0} units. Use
-                        restock to add more inventory.
-                      </p>
                     </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      SKU
-                    </label>
-                    <input
-                      type="text"
-                      value={productForm.sku}
-                      onChange={(e) =>
-                        setProductForm({ ...productForm, sku: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Auto-generated if empty"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Add Category Form */}
-              {modalType === "addCategory" && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Category Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={categoryForm.name}
-                      onChange={(e) =>
-                        setCategoryForm({
-                          ...categoryForm,
-                          name: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., Suspension Parts"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Subcategories (Optional)
-                    </label>
-                    <textarea
-                      value={categoryForm.subcategories}
-                      onChange={(e) =>
-                        setCategoryForm({
-                          ...categoryForm,
-                          subcategories: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      rows="3"
-                      placeholder="Enter subcategories separated by commas&#10;e.g., Front Forks, Rear Shock, Bearings"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Separate multiple subcategories with commas
-                    </p>
+                    {modalType === "editProduct" && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Min. Stock Level
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={productForm.minQuantity}
+                          onChange={(e) =>
+                            setProductForm({
+                              ...productForm,
+                              minQuantity: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                          placeholder="5"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1194,32 +1323,36 @@ const InventoryManagement = () => {
               {/* Restock Form */}
               {modalType === "restock" && selectedItem && (
                 <div className="space-y-4">
-                  <div className="bg-blue-50 p-4 rounded-lg mb-4">
-                    <h3 className="font-semibold text-gray-900 mb-2">
-                      {selectedItem.name}
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Box className="text-indigo-600" size={20} />
+                      <h3 className="font-bold text-slate-900">
+                        {selectedItem.name}
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
-                        <span className="text-gray-600">Current Stock:</span>
-                        <span className="font-semibold text-gray-900 ml-2">
-                          {selectedItem.quantity || 0} units
-                        </span>
+                        <p className="text-slate-500">Current Stock</p>
+                        <p className="font-bold text-lg text-slate-900">
+                          {selectedItem.quantity} units
+                        </p>
                       </div>
                       <div>
-                        <span className="text-gray-600">Current Cost:</span>
-                        <span className="font-semibold text-gray-900 ml-2">
-                          KES {selectedItem.costPrice || 0}
-                        </span>
+                        <p className="text-slate-500">Minimum Required</p>
+                        <p className="font-bold text-lg text-amber-600">
+                          {selectedItem.minQuantity || 5} units
+                        </p>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
                       Quantity to Add *
                     </label>
                     <input
                       type="number"
+                      min="1"
                       value={restockForm.quantityToAdd}
                       onChange={(e) =>
                         setRestockForm({
@@ -1227,26 +1360,19 @@ const InventoryManagement = () => {
                           quantityToAdd: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="0"
-                      min="1"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      placeholder="Enter quantity"
                     />
-                    {restockForm.quantityToAdd && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        New stock level:{" "}
-                        {(selectedItem.quantity || 0) +
-                          parseInt(restockForm.quantityToAdd || 0)}{" "}
-                        units
-                      </p>
-                    )}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
                       Cost Price per Unit (KES)
                     </label>
                     <input
                       type="number"
+                      min="0"
+                      step="0.01"
                       value={restockForm.costPrice}
                       onChange={(e) =>
                         setRestockForm({
@@ -1254,28 +1380,16 @@ const InventoryManagement = () => {
                           costPrice: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="0"
-                      min="0"
-                      step="0.01"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      placeholder="Enter cost price"
                     />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Current: KES {selectedItem.costPrice?.toLocaleString()}
+                    </p>
                   </div>
 
-                  {restockForm.quantityToAdd && restockForm.costPrice && (
-                    <div className="bg-gray-50 p-3 rounded-lg">
-                      <span className="text-sm text-gray-600">Total Cost:</span>
-                      <span className="font-bold text-lg text-gray-900 ml-2">
-                        KES{" "}
-                        {(
-                          parseInt(restockForm.quantityToAdd) *
-                          parseFloat(restockForm.costPrice)
-                        ).toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
                       Supplier
                     </label>
                     <input
@@ -1287,13 +1401,13 @@ const InventoryManagement = () => {
                           supplier: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Supplier name"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      placeholder="Enter supplier name"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
                       Notes
                     </label>
                     <textarea
@@ -1304,46 +1418,129 @@ const InventoryManagement = () => {
                           notes: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                      rows="3"
-                      placeholder="Additional notes about this restock..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      placeholder="Any additional notes"
+                      rows={2}
                     />
+                  </div>
+                </div>
+              )}
+
+              {/* Add Category Form */}
+              {modalType === "addCategory" && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Category Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={categoryForm.name}
+                      onChange={(e) =>
+                        setCategoryForm({
+                          ...categoryForm,
+                          name: e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      placeholder="Enter category name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Subcategories
+                    </label>
+                    <textarea
+                      value={categoryForm.subcategories}
+                      onChange={(e) =>
+                        setCategoryForm({
+                          ...categoryForm,
+                          subcategories: e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      placeholder="Enter subcategories separated by commas"
+                      rows={3}
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Example: Premium, Standard, Budget
+                    </p>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Modal Actions */}
-            <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setSelectedItem(null);
-                  resetProductForm();
-                  resetRestockForm();
-                }}
-                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (modalType === "addProduct") handleAddProduct();
-                  else if (modalType === "editProduct") handleEditProduct();
-                  else if (modalType === "addCategory") handleAddCategory();
-                  else if (modalType === "restock") handleRestock();
-                }}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                {modalType === "addProduct" && "Add Product"}
-                {modalType === "editProduct" && "Save Changes"}
-                {modalType === "addCategory" && "Add Category"}
-                {modalType === "restock" && "Confirm Restock"}
-              </button>
+            {/* Modal Footer */}
+            <div className="border-t border-slate-200 p-6">
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowModal(false);
+                    setSelectedItem(null);
+                    resetProductForm();
+                    resetRestockForm();
+                  }}
+                  className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (modalType === "addProduct") handleAddProduct();
+                    if (modalType === "editProduct") handleEditProduct();
+                    if (modalType === "restock") handleRestock();
+                    if (modalType === "addCategory") handleAddCategory();
+                  }}
+                  className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium flex items-center gap-2"
+                >
+                  <CheckCircle size={18} />
+                  {modalType === "addProduct" && "Add Product"}
+                  {modalType === "editProduct" && "Update Product"}
+                  {modalType === "restock" && "Restock"}
+                  {modalType === "addCategory" && "Add Category"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Footer Stats */}
+      <div className="mt-8 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="text-center">
+            <div className="text-3xl font-bold text-slate-900 mb-1">
+              {inventory.length}
+            </div>
+            <div className="text-sm text-slate-600 font-medium">
+              Total Products
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-emerald-600 mb-1">
+              {inventory.reduce((sum, item) => sum + (item.quantity || 0), 0)}
+            </div>
+            <div className="text-sm text-slate-600 font-medium">
+              Total Stock
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-amber-600 mb-1">
+              {lowStockItems.length}
+            </div>
+            <div className="text-sm text-slate-600 font-medium">
+              Low Stock Items
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-indigo-600 mb-1">
+              {categories.length}
+            </div>
+            <div className="text-sm text-slate-600 font-medium">Categories</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
