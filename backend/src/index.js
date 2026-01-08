@@ -19,7 +19,7 @@ app.use(express.urlencoded({ extended: true }));
 
 
 // Routes (AFTER middleware)
-app.use("/api/inventory", inventoryRoutes);
+app.use("/api/categories", inventoryRoutes);
 
 // Health check route
 app.get("/", (req, res) => {

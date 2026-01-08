@@ -286,6 +286,101 @@ const creditSchema = new mongoose.Schema({
   },
 });
 
+// ==================== RESTOCK HISTORY SCHEMA ====================
+// ⚠️ ADD THIS - Your controller needs it!
+const restockHistorySchema = new mongoose.Schema({
+  productId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Inventory",
+    required: true,
+  },
+  productName: {
+    type: String,
+    required: true,
+  },
+  quantityAdded: {
+    type: Number,
+    required: true,
+    min: 1,
+  },
+  previousQuantity: {
+    type: Number,
+    required: true,
+    min: 0,
+  },
+  newQuantity: {
+    type: Number,
+    required: true,
+    min: 0,
+  },
+  costPrice: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  buyingPrice: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  totalCost: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  restockedBy: {
+    type: String,
+    default: "unknown",
+  },
+  restockedByName: {
+    type: String,
+    default: "Unknown",
+  },
+  supplier: {
+    type: String,
+    trim: true,
+  },
+  notes: {
+    type: String,
+    trim: true,
+  },
+  date: {
+    type: Date,
+    default: Date.now,
+    required: true,
+  },
+});
+
+// ==================== USER SCHEMA ====================
+// ⚠️ ADD THIS - Your controller needs it!
+const userSchema = new mongoose.Schema({
+  fullName: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    lowercase: true,
+  },
+  role: {
+    type: String,
+    enum: ["admin", "manager", "staff"],
+    default: "staff",
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
 // Indexes
 categorySchema.index({ name: 1 });
 inventorySchema.index({ sku: 1 });
@@ -295,6 +390,9 @@ salesSchema.index({ status: 1 });
 creditSchema.index({ customerId: 1 });
 creditSchema.index({ saleId: 1 });
 creditSchema.index({ status: 1 });
+restockHistorySchema.index({ productId: 1 });
+restockHistorySchema.index({ date: -1 });
+userSchema.index({ email: 1 });
 
 // Update timestamps middleware
 categorySchema.pre("save", function (next) {
@@ -307,15 +405,25 @@ inventorySchema.pre("save", function (next) {
   next();
 });
 
+userSchema.pre("save", function (next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
 // Export models
 const Category = mongoose.model("Category", categorySchema);
 const Inventory = mongoose.model("Inventory", inventorySchema);
 const Sale = mongoose.model("Sale", salesSchema);
 const Credit = mongoose.model("Credit", creditSchema);
+const RestockHistory = mongoose.model("RestockHistory", restockHistorySchema);
+const User = mongoose.model("User", userSchema);
 
+// ⚠️ CRITICAL: Export ALL models including RestockHistory and User
 module.exports = {
   Category,
   Inventory,
   Sale,
   Credit,
+  RestockHistory,
+  User,
 };
