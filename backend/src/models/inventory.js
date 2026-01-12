@@ -1,429 +1,186 @@
 const mongoose = require("mongoose");
 
 // Category Schema
-const categorySchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  subcategories: [
-    {
+const categorySchema = new mongoose.Schema(
+  {
+    name: {
       type: String,
+      required: [true, "Category name is required"],
       trim: true,
+      unique: true,
     },
-  ],
-  createdAt: {
-    type: Date,
-    default: Date.now,
+    subcategories: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+  {
+    timestamps: true,
+  }
+);
 
 // Product/Inventory Schema
-const inventorySchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  description: {
-    type: String,
-    trim: true,
-  },
-  category: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Category",
-    required: true,
-  },
-  categoryName: {
-    type: String,
-    required: true,
-  },
-  subcategory: {
-    type: String,
-    trim: true,
-  },
-  price: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  costPrice: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  buyingPrice: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  quantity: {
-    type: Number,
-    required: true,
-    min: 0,
-    default: 0,
-  },
-  minQuantity: {
-    type: Number,
-    default: 5,
-    min: 0,
-  },
-  sku: {
-    type: String,
-    unique: true,
-    required: true,
-    trim: true,
-  },
-  lastRestocked: {
-    type: Date,
-    default: Date.now,
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
-
-// Sales Schema
-const salesSchema = new mongoose.Schema({
-  saleDate: {
-    type: Date,
-    default: Date.now,
-    required: true,
-  },
-  items: [
-    {
-      productId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Inventory",
-        required: true,
-      },
-      productName: {
-        type: String,
-        required: true,
-      },
-      quantity: {
-        type: Number,
-        required: true,
-        min: 1,
-      },
-      unitPrice: {
-        type: Number,
-        required: true,
-        min: 0,
-      },
-      discount: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-      subtotal: {
-        type: Number,
-        required: true,
-        min: 0,
-      },
+const productSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, "Product name is required"],
+      trim: true,
     },
-  ],
-  totalAmount: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  totalDiscount: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  finalAmount: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  paymentMethod: {
-    type: String,
-    enum: ["cash", "mpesa", "split", "credit"],
-    required: true,
-  },
-  paymentDetails: {
-    cash: {
+    description: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    category: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      required: [true, "Category is required"],
+    },
+    categoryName: {
+      type: String,
+      required: true,
+    },
+    subcategory: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    price: {
       type: Number,
-      default: 0,
-      min: 0,
+      required: [true, "Selling price is required"],
+      min: [0, "Price cannot be negative"],
     },
-    mpesa: {
+    costPrice: {
       type: Number,
+      required: [true, "Cost price is required"],
+      min: [0, "Cost price cannot be negative"],
       default: 0,
-      min: 0,
     },
-    credit: {
+    quantity: {
       type: Number,
+      required: [true, "Quantity is required"],
+      min: [0, "Quantity cannot be negative"],
       default: 0,
-      min: 0,
+    },
+    minQuantity: {
+      type: Number,
+      min: [0, "Minimum quantity cannot be negative"],
+      default: 5,
+    },
+    sku: {
+      type: String,
+      unique: true,
+      trim: true,
+    },
+    lastRestocked: {
+      type: Date,
+      default: Date.now,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now,
     },
   },
-  customerId: {
-    type: String,
-    trim: true,
-  },
-  customerName: {
-    type: String,
-    trim: true,
-  },
-  customerPhone: {
-    type: String,
-    trim: true,
-  },
-  soldBy: {
-    type: String,
-    default: "system",
-  },
-  soldByName: {
-    type: String,
-    default: "System",
-  },
-  status: {
-    type: String,
-    enum: ["completed", "partial", "credit"],
-    default: "completed",
-  },
-  notes: {
-    type: String,
-    trim: true,
-  },
+  {
+    timestamps: true,
+  }
+);
+
+// Auto-generate SKU if not provided
+productSchema.pre("save", async function () {
+  if (!this.sku) {
+    this.sku = `SKU-${Date.now()}-${Math.random()
+      .toString(36)
+      .substr(2, 6)
+      .toUpperCase()}`;
+  }
 });
 
-// Credit/Debt Schema
-const creditSchema = new mongoose.Schema({
-  customerId: {
-    type: String,
-    trim: true,
-  },
-  customerName: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  customerPhone: {
-    type: String,
-    trim: true,
-  },
-  saleId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Sale",
-    required: true,
-  },
-  creditDate: {
-    type: Date,
-    default: Date.now,
-    required: true,
-  },
-  items: [
-    {
-      productId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Inventory",
-      },
-      productName: String,
-      quantity: Number,
-      unitPrice: Number,
-      discount: Number,
-      subtotal: Number,
+// Restock History Schema
+const restockHistorySchema = new mongoose.Schema(
+  {
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
     },
-  ],
-  totalAmount: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  amountPaid: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  remainingBalance: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  payments: [
-    {
-      paymentDate: {
-        type: Date,
-        default: Date.now,
-      },
-      amount: {
-        type: Number,
-        required: true,
-        min: 0,
-      },
-      paymentMethod: {
-        type: String,
-        enum: ["cash", "mpesa"],
-        required: true,
-      },
-      receivedBy: String,
-      receivedByName: String,
-      notes: String,
+    productName: {
+      type: String,
+      required: true,
     },
-  ],
-  status: {
-    type: String,
-    enum: ["active", "paid", "partial"],
-    default: "active",
+    quantityAdded: {
+      type: Number,
+      required: [true, "Quantity added is required"],
+      min: [1, "Quantity added must be at least 1"],
+    },
+    previousQuantity: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    newQuantity: {
+      type: Number,
+      required: true,
+    },
+    costPrice: {
+      type: Number,
+      required: true,
+      min: [0, "Cost price cannot be negative"],
+    },
+    totalCost: {
+      type: Number,
+      required: true,
+    },
+    restockedBy: {
+      type: String,
+      default: "Admin User",
+    },
+    restockedByName: {
+      type: String,
+      default: "Admin User",
+    },
+    supplier: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    notes: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    date: {
+      type: Date,
+      default: Date.now,
+    },
   },
-  notes: {
-    type: String,
-    trim: true,
-  },
-});
+  {
+    timestamps: true,
+  }
+);
 
-// ==================== RESTOCK HISTORY SCHEMA ====================
-// ⚠️ ADD THIS - Your controller needs it!
-const restockHistorySchema = new mongoose.Schema({
-  productId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Inventory",
-    required: true,
-  },
-  productName: {
-    type: String,
-    required: true,
-  },
-  quantityAdded: {
-    type: Number,
-    required: true,
-    min: 1,
-  },
-  previousQuantity: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  newQuantity: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  costPrice: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  buyingPrice: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  totalCost: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  restockedBy: {
-    type: String,
-    default: "unknown",
-  },
-  restockedByName: {
-    type: String,
-    default: "Unknown",
-  },
-  supplier: {
-    type: String,
-    trim: true,
-  },
-  notes: {
-    type: String,
-    trim: true,
-  },
-  date: {
-    type: Date,
-    default: Date.now,
-    required: true,
-  },
-});
-
-// ==================== USER SCHEMA ====================
-// ⚠️ ADD THIS - Your controller needs it!
-const userSchema = new mongoose.Schema({
-  fullName: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true,
-    lowercase: true,
-  },
-  role: {
-    type: String,
-    enum: ["admin", "manager", "staff"],
-    default: "staff",
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
-
-// Indexes
-categorySchema.index({ name: 1 });
-inventorySchema.index({ sku: 1 });
-inventorySchema.index({ category: 1 });
-salesSchema.index({ saleDate: -1 });
-salesSchema.index({ status: 1 });
-creditSchema.index({ customerId: 1 });
-creditSchema.index({ saleId: 1 });
-creditSchema.index({ status: 1 });
-restockHistorySchema.index({ productId: 1 });
-restockHistorySchema.index({ date: -1 });
-userSchema.index({ email: 1 });
-
-// Update timestamps middleware
-categorySchema.pre("save", function (next) {
-  this.updatedAt = Date.now();
-  next();
-});
-
-inventorySchema.pre("save", function (next) {
-  this.updatedAt = Date.now();
-  next();
-});
-
-userSchema.pre("save", function (next) {
-  this.updatedAt = Date.now();
-  next();
-});
-
-// Export models
+// Create models
 const Category = mongoose.model("Category", categorySchema);
-const Inventory = mongoose.model("Inventory", inventorySchema);
-const Sale = mongoose.model("Sale", salesSchema);
-const Credit = mongoose.model("Credit", creditSchema);
+const Product = mongoose.model("Product", productSchema);
 const RestockHistory = mongoose.model("RestockHistory", restockHistorySchema);
-const User = mongoose.model("User", userSchema);
 
-// ⚠️ CRITICAL: Export ALL models including RestockHistory and User
 module.exports = {
   Category,
-  Inventory,
-  Sale,
-  Credit,
+  Product,
   RestockHistory,
-  User,
 };

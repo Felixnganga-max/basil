@@ -1,31 +1,58 @@
 const express = require("express");
 const router = express.Router();
-const controllers = require("../controllers/inventory");
+const {
+  // Category controllers
+  getAllCategories,
+  getCategoryById,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+
+  // Product controllers
+  getAllProducts,
+  getProductById,
+  getLowStockProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+
+  // Restock controllers
+  restockProduct,
+  getRestockHistory,
+  getRestockById,
+
+  // Statistics
+  getInventoryStats,
+} = require("../controllers/inventory");
 
 // ==================== CATEGORY ROUTES ====================
-router.get("/categories", controllers.getAllCategories);
-router.get("/categories/:id", controllers.getCategoryById);
-router.post("/categories", controllers.createCategory);
-router.put("/categories/:id", controllers.updateCategory);
-router.delete("/categories/:id", controllers.deleteCategory);
+router.route("/categories").get(getAllCategories).post(createCategory);
 
-// ==================== INVENTORY ROUTES ====================
-// ⚠️ IMPORTANT: Specific routes MUST come BEFORE dynamic :id routes
-router.get("/inventory/low-stock", controllers.getLowStockItems); // ✅ Must be first
-router.get("/inventory", controllers.getAllInventory);
-router.get("/inventory/:id", controllers.getInventoryById); // ✅ Dynamic route comes after
-router.post("/inventory", controllers.createInventory);
-router.put("/inventory/:id", controllers.updateInventory);
-router.delete("/inventory/:id", controllers.deleteInventory);
+router
+  .route("/categories/:id")
+  .get(getCategoryById)
+  .put(updateCategory)
+  .delete(deleteCategory);
+
+// ==================== PRODUCT ROUTES ====================
+router.route("/products").get(getAllProducts).post(createProduct);
+
+router.route("/products/low-stock").get(getLowStockProducts);
+
+router
+  .route("/products/:id")
+  .get(getProductById)
+  .put(updateProduct)
+  .delete(deleteProduct);
 
 // ==================== RESTOCK ROUTES ====================
-router.get("/restock-history", controllers.getAllRestockHistory);
-router.post("/restock", controllers.restockProduct);
+router.route("/products/:id/restock").post(restockProduct);
 
-// ==================== USER ROUTES ====================
-// ⚠️ IMPORTANT: Specific routes MUST come BEFORE dynamic :id routes
-router.get("/users/current", controllers.getCurrentUser); // ✅ Must be first
-router.get("/users", controllers.getAllUsers);
-router.post("/users", controllers.createUser);
+router.route("/restock-history").get(getRestockHistory);
+
+router.route("/restock-history/:id").get(getRestockById);
+
+// ==================== STATISTICS ROUTES ====================
+router.route("/stats").get(getInventoryStats);
 
 module.exports = router;

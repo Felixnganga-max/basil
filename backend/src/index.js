@@ -16,10 +16,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-
-
 // Routes (AFTER middleware)
-app.use("/api/categories", inventoryRoutes);
+app.use("/api/inventory", inventoryRoutes);
 
 // Health check route
 app.get("/", (req, res) => {
