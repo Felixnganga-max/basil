@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const inventoryRoutes = require("./routes/inventory");
+const salesRoutes = require("./routes/sales");
+const reportRoutes = require("./routes/reports");
 
 // Load environment variables
 dotenv.config();
@@ -18,6 +20,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes (AFTER middleware)
 app.use("/api/inventory", inventoryRoutes);
+app.use("/api/sales", salesRoutes);
+app.use("/api/reports", reportRoutes);
 
 // Health check route
 app.get("/", (req, res) => {
