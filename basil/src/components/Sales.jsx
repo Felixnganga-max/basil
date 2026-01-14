@@ -13,117 +13,27 @@ import {
   ChevronUp,
 } from "lucide-react";
 
-const defaultCategories = [
-  {
-    id: "cat_001",
-    name: "Engine Parts",
-    subcategories: ["Pistons", "Cylinders", "Crankshafts", "Valves", "Gaskets"],
-  },
-  {
-    id: "cat_002",
-    name: "Body Parts",
-    subcategories: ["Fairings", "Fenders", "Mirrors", "Seats", "Fuel Tanks"],
-  },
-  {
-    id: "cat_003",
-    name: "Electrical",
-    subcategories: [
-      "Batteries",
-      "Spark Plugs",
-      "Wiring",
-      "Lights",
-      "Ignition Coils",
-    ],
-  },
-  {
-    id: "cat_004",
-    name: "Brakes",
-    subcategories: ["Brake Pads", "Brake Discs", "Brake Fluid", "Brake Cables"],
-  },
-];
+// API Configuration
+const API_BASE_URL = "https://basil-bhmb.vercel.app/api";
 
-const defaultInventory = [
-  {
-    id: "prod_001",
-    name: "Piston Set - 125cc",
-    category: "cat_001",
-    subcategory: "Pistons",
-    costPrice: 2800,
-    sellingPrice: 3500,
-    quantity: 15,
-    minQuantity: 5,
-  },
-  {
-    id: "prod_002",
-    name: "Brake Pads - Front",
-    category: "cat_004",
-    subcategory: "Brake Pads",
-    costPrice: 900,
-    sellingPrice: 1200,
-    quantity: 30,
-    minQuantity: 10,
-  },
-  {
-    id: "prod_003",
-    name: "Battery - 12V 7Ah",
-    category: "cat_003",
-    subcategory: "Batteries",
-    costPrice: 3500,
-    sellingPrice: 4500,
-    quantity: 8,
-    minQuantity: 3,
-  },
-  {
-    id: "prod_004",
-    name: "Side Mirror - Left",
-    category: "cat_002",
-    subcategory: "Mirrors",
-    costPrice: 600,
-    sellingPrice: 800,
-    quantity: 25,
-    minQuantity: 10,
-  },
-  {
-    id: "prod_005",
-    name: "Chain Set - 428",
-    category: "cat_001",
-    subcategory: "Chains",
-    costPrice: 2200,
-    sellingPrice: 2800,
-    quantity: 12,
-    minQuantity: 5,
-  },
-  {
-    id: "prod_006",
-    name: "Spark Plug - NGK",
-    category: "cat_003",
-    subcategory: "Spark Plugs",
-    costPrice: 350,
-    sellingPrice: 450,
-    quantity: 40,
-    minQuantity: 15,
-  },
-  {
-    id: "prod_007",
-    name: "Oil Filter",
-    category: "cat_001",
-    subcategory: "Filters",
-    costPrice: 400,
-    sellingPrice: 550,
-    quantity: 22,
-    minQuantity: 8,
-  },
-  {
-    id: "prod_008",
-    name: "Front Fairing",
-    category: "cat_002",
-    subcategory: "Fairings",
-    costPrice: 5500,
-    sellingPrice: 7000,
-    quantity: 5,
-    minQuantity: 2,
-  },
-];
+// API Helper Functions
+const api = {
+  // Categories
+  getCategories: () =>
+    fetch(`${API_BASE_URL}/inventory/categories`).then((r) => r.json()),
+
+  // Products
+  getProducts: (query = "") =>
+    fetch(`${API_BASE_URL}/inventory/products${query}`).then((r) => r.json()),
+
+  // Sales
+  createSale: (data) =>
+    fetch(`${API_BASE_URL}/sales`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).then((r) => r.json()),
+};
 
 const Sales = () => {
   const [inventory, setInventory] = useState([]);
@@ -141,49 +51,61 @@ const Sales = () => {
   const [customerPhone, setCustomerPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [expandedProduct, setExpandedProduct] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const loadData = () => {
+  const loadData = async () => {
     try {
-      const invData = localStorage.getItem("inventory");
-      const catData = localStorage.getItem("categories");
+      setLoading(true);
 
-      if (invData) {
-        const parsedInv = JSON.parse(invData);
-        setInventory(parsedInv);
-      } else {
-        localStorage.setItem("inventory", JSON.stringify(defaultInventory));
-        setInventory(defaultInventory);
+      // Load categories
+      const categoriesRes = await api.getCategories();
+      if (categoriesRes.success) {
+        setCategories(categoriesRes.data);
       }
 
-      if (catData) {
-        const parsedCat = JSON.parse(catData);
-        setCategories(parsedCat);
-      } else {
-        localStorage.setItem("categories", JSON.stringify(defaultCategories));
-        setCategories(defaultCategories);
+      // Load inventory - only products with stock
+      const inventoryRes = await api.getProducts();
+      if (inventoryRes.success) {
+        // Filter products with stock > 0
+        const availableProducts = inventoryRes.data.filter(
+          (product) => product.quantity > 0
+        );
+        setInventory(availableProducts);
       }
+
+      // Set current user (you can get this from your auth system)
+      const defaultUser = {
+        id: "user_default",
+        fullName: "Admin User",
+      };
+      setCurrentUser(defaultUser);
     } catch (error) {
       console.error("Error loading data:", error);
-      setInventory(defaultInventory);
-      setCategories(defaultCategories);
+      alert(
+        "Failed to load data. Please check if the backend is running on http://localhost:5000"
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const filteredProducts = inventory.filter((product) => {
-    const matchesSearch = product.name
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
+    const matchesSearch =
+      (product.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (product.sku || "").toLowerCase().includes(searchTerm.toLowerCase());
+
+    const categoryId = product.category?._id || product.category;
     const matchesCategory =
-      selectedCategory === "all" || product.category === selectedCategory;
+      selectedCategory === "all" || categoryId === selectedCategory;
+
     const matchesSubcategory =
       selectedSubcategory === "all" ||
       product.subcategory === selectedSubcategory;
+
     return (
       matchesSearch &&
       matchesCategory &&
@@ -195,21 +117,21 @@ const Sales = () => {
   const availableSubcategories =
     selectedCategory === "all"
       ? []
-      : categories.find((cat) => cat.id === selectedCategory)?.subcategories ||
+      : categories.find((cat) => cat._id === selectedCategory)?.subcategories ||
         [];
 
   const updateProductQuantity = (productId, newQuantity) => {
-    const product = inventory.find((p) => p.id === productId);
+    const product = inventory.find((p) => p._id === productId);
     if (!product) return;
 
     if (newQuantity <= 0) {
       removeFromCart(productId);
     } else if (newQuantity <= product.quantity) {
-      const existingItem = cart.find((item) => item.id === productId);
+      const existingItem = cart.find((item) => item._id === productId);
       if (existingItem) {
         setCart(
           cart.map((item) =>
-            item.id === productId ? { ...item, quantity: newQuantity } : item
+            item._id === productId ? { ...item, quantity: newQuantity } : item
           )
         );
       } else {
@@ -223,10 +145,10 @@ const Sales = () => {
   const updateDiscount = (productId, discount) => {
     setCart(
       cart.map((item) =>
-        item.id === productId
+        item._id === productId
           ? {
               ...item,
-              discount: Math.max(0, Math.min(discount, item.sellingPrice || 0)),
+              discount: Math.max(0, Math.min(discount, item.price || 0)),
             }
           : item
       )
@@ -234,7 +156,7 @@ const Sales = () => {
   };
 
   const removeFromCart = (productId) => {
-    setCart(cart.filter((item) => item.id !== productId));
+    setCart(cart.filter((item) => item._id !== productId));
     if (expandedProduct === productId) {
       setExpandedProduct(null);
     }
@@ -242,7 +164,7 @@ const Sales = () => {
 
   const calculateTotals = () => {
     const subtotal = cart.reduce(
-      (sum, item) => sum + (item.sellingPrice || 0) * (item.quantity || 0),
+      (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
       0
     );
     const totalDiscount = cart.reduce(
@@ -262,22 +184,17 @@ const Sales = () => {
     calculateTotals();
 
   const getCartItemQuantity = (productId) => {
-    const item = cart.find((i) => i.id === productId);
+    const item = cart.find((i) => i._id === productId);
     return item ? item.quantity : 0;
   };
 
-  const processSale = () => {
+  const processSale = async () => {
     if (cart.length === 0) {
       alert("Cart is empty!");
       return;
     }
 
     try {
-      const user = JSON.parse(localStorage.getItem("current_user")) || {
-        id: "user_001",
-        fullName: "Admin",
-      };
-
       let paymentDetails = { cash: 0, mpesa: 0, credit: 0 };
       let status = "completed";
 
@@ -314,19 +231,19 @@ const Sales = () => {
         status = "credit";
       }
 
-      const sale = {
-        id: `sale_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        saleDate: new Date().toISOString(),
+      // Prepare sale data for API
+      const saleData = {
         items: cart.map((item) => ({
-          productId: item.id,
+          productId: item._id,
           productName: item.name,
+          sku: item.sku || "",
           quantity: item.quantity,
-          costPrice: item.costPrice,
-          unitPrice: item.sellingPrice,
-          discount: item.discount,
-          subtotal: (item.sellingPrice - item.discount) * item.quantity,
+          costPrice: item.costPrice || 0,
+          unitPrice: item.price || 0,
+          discount: item.discount || 0,
+          subtotal: ((item.price || 0) - (item.discount || 0)) * item.quantity,
           profit:
-            (item.sellingPrice - item.discount - item.costPrice) *
+            ((item.price || 0) - (item.discount || 0) - (item.costPrice || 0)) *
             item.quantity,
         })),
         totalAmount: subtotal,
@@ -336,69 +253,35 @@ const Sales = () => {
         totalProfit: profit,
         paymentMethod: paymentMethod,
         paymentDetails: paymentDetails,
-        customerId: customerName ? `cust_${Date.now()}` : null,
         customerName: customerName || null,
         customerPhone: customerPhone || null,
-        soldBy: user.id,
-        soldByName: user.fullName,
-        status: status,
-        notes: notes,
+        soldBy: currentUser?.id || "system",
+        soldByName: currentUser?.fullName || "System",
+        notes: notes || "",
       };
 
-      const updatedInventory = inventory.map((product) => {
-        const cartItem = cart.find((item) => item.id === product.id);
-        if (cartItem) {
-          return {
-            ...product,
-            quantity: product.quantity - cartItem.quantity,
-            updatedAt: new Date().toISOString(),
-          };
-        }
-        return product;
-      });
+      // Submit sale to API
+      const response = await api.createSale(saleData);
 
-      const existingSales = JSON.parse(localStorage.getItem("sales") || "[]");
-      localStorage.setItem("sales", JSON.stringify([...existingSales, sale]));
+      if (response.success) {
+        alert("Sale completed successfully!");
 
-      localStorage.setItem("inventory", JSON.stringify(updatedInventory));
-      setInventory(updatedInventory);
+        // Reload inventory to get updated stock levels
+        await loadData();
 
-      if (paymentDetails.credit > 0) {
-        const credit = {
-          id: `credit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          customerId: sale.customerId,
-          customerName: customerName,
-          customerPhone: customerPhone,
-          saleId: sale.id,
-          creditDate: new Date().toISOString(),
-          items: sale.items,
-          totalAmount: paymentDetails.credit,
-          amountPaid: 0,
-          remainingBalance: paymentDetails.credit,
-          payments: [],
-          status: "active",
-          notes: notes,
-        };
-
-        const existingCredits = JSON.parse(
-          localStorage.getItem("credits") || "[]"
-        );
-        localStorage.setItem(
-          "credits",
-          JSON.stringify([...existingCredits, credit])
-        );
+        // Reset form
+        setCart([]);
+        setShowCheckout(false);
+        setPaymentMethod("cash");
+        setCashAmount("");
+        setMpesaAmount("");
+        setCustomerName("");
+        setCustomerPhone("");
+        setNotes("");
+        setExpandedProduct(null);
+      } else {
+        alert(response.message || "Failed to process sale");
       }
-
-      alert("Sale completed successfully!");
-      setCart([]);
-      setShowCheckout(false);
-      setPaymentMethod("cash");
-      setCashAmount("");
-      setMpesaAmount("");
-      setCustomerName("");
-      setCustomerPhone("");
-      setNotes("");
-      setExpandedProduct(null);
     } catch (error) {
       console.error("Error processing sale:", error);
       alert("Error processing sale. Please try again.");
@@ -456,7 +339,7 @@ const Sales = () => {
                 >
                   <option value="all">All Categories</option>
                   {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
+                    <option key={cat._id} value={cat._id}>
                       {cat.name}
                     </option>
                   ))}
@@ -490,13 +373,13 @@ const Sales = () => {
                   </div>
                 ) : (
                   filteredProducts.map((product) => {
-                    const cartQty = getCartItemQuantity(product.id);
+                    const cartQty = getCartItemQuantity(product._id);
                     const isInCart = cartQty > 0;
-                    const isExpanded = expandedProduct === product.id;
+                    const isExpanded = expandedProduct === product._id;
 
                     return (
                       <div
-                        key={product.id}
+                        key={product._id}
                         className={`p-3 transition-all ${
                           isInCart ? "bg-red-50" : "hover:bg-gray-50"
                         }`}
@@ -506,7 +389,7 @@ const Sales = () => {
                           onClick={() => {
                             if (isInCart) {
                               setExpandedProduct(
-                                isExpanded ? null : product.id
+                                isExpanded ? null : product._id
                               );
                             }
                           }}
@@ -526,12 +409,12 @@ const Sales = () => {
                                 Stock: {product.quantity}
                               </span>
                               <span className="text-xs text-gray-600">
-                                Cost: KSh{" "}
+                                Buying Price: KSh{" "}
                                 {(product.costPrice || 0).toLocaleString()}
                               </span>
                               <span className="text-xs text-red-600 font-semibold">
-                                Sell: KSh{" "}
-                                {(product.sellingPrice || 0).toLocaleString()}
+                                Selling Price: KSh{" "}
+                                {(product.price || 0).toLocaleString()}
                               </span>
                             </div>
                           </div>
@@ -558,8 +441,8 @@ const Sales = () => {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  updateProductQuantity(product.id, 1);
-                                  setExpandedProduct(product.id);
+                                  updateProductQuantity(product._id, 1);
+                                  setExpandedProduct(product._id);
                                 }}
                                 className="bg-red-600 hover:bg-red-700 text-white p-1.5 rounded transition-all"
                               >
@@ -574,7 +457,10 @@ const Sales = () => {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() =>
-                                  updateProductQuantity(product.id, cartQty - 1)
+                                  updateProductQuantity(
+                                    product._id,
+                                    cartQty - 1
+                                  )
                                 }
                                 className="bg-gray-300 hover:bg-gray-400 text-gray-900 p-2 rounded transition-all"
                               >
@@ -586,7 +472,7 @@ const Sales = () => {
                                 value={cartQty}
                                 onChange={(e) =>
                                   updateProductQuantity(
-                                    product.id,
+                                    product._id,
                                     parseInt(e.target.value) || 0
                                   )
                                 }
@@ -597,7 +483,10 @@ const Sales = () => {
 
                               <button
                                 onClick={() =>
-                                  updateProductQuantity(product.id, cartQty + 1)
+                                  updateProductQuantity(
+                                    product._id,
+                                    cartQty + 1
+                                  )
                                 }
                                 disabled={cartQty >= product.quantity}
                                 className="bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white p-2 rounded transition-all"
@@ -606,7 +495,7 @@ const Sales = () => {
                               </button>
 
                               <button
-                                onClick={() => removeFromCart(product.id)}
+                                onClick={() => removeFromCart(product._id)}
                                 className="bg-orange-500 hover:bg-orange-600 text-white p-2 rounded transition-all ml-auto"
                               >
                                 <Trash2 size={16} />
@@ -620,18 +509,18 @@ const Sales = () => {
                               <input
                                 type="number"
                                 value={
-                                  cart.find((item) => item.id === product.id)
+                                  cart.find((item) => item._id === product._id)
                                     ?.discount || 0
                                 }
                                 onChange={(e) =>
                                   updateDiscount(
-                                    product.id,
+                                    product._id,
                                     parseFloat(e.target.value) || 0
                                   )
                                 }
                                 className="flex-1 bg-white border border-gray-300 rounded px-2 py-1.5 text-sm font-semibold focus:outline-none focus:border-orange-500"
                                 min="0"
-                                max={product.sellingPrice}
+                                max={product.price}
                                 placeholder="0"
                               />
                               <span className="text-xs text-gray-600">KSh</span>
@@ -644,9 +533,10 @@ const Sales = () => {
                               <span className="font-bold text-red-600">
                                 KSh{" "}
                                 {(
-                                  ((product.sellingPrice || 0) -
-                                    (cart.find((item) => item.id === product.id)
-                                      ?.discount || 0)) *
+                                  ((product.price || 0) -
+                                    (cart.find(
+                                      (item) => item._id === product._id
+                                    )?.discount || 0)) *
                                   cartQty
                                 ).toLocaleString()}
                               </span>
@@ -685,7 +575,7 @@ const Sales = () => {
                 ) : (
                   cart.map((item) => (
                     <div
-                      key={item.id}
+                      key={item._id}
                       className="bg-gray-50 p-2.5 rounded border border-gray-200"
                     >
                       <div className="flex justify-between items-start mb-1">
@@ -695,7 +585,7 @@ const Sales = () => {
                           </h4>
                           <p className="text-xs text-gray-600">
                             {item.quantity} × KSh{" "}
-                            {(item.sellingPrice || 0).toLocaleString()}
+                            {(item.price || 0).toLocaleString()}
                           </p>
                           {item.discount > 0 && (
                             <p className="text-xs text-orange-600 font-medium">
@@ -705,7 +595,7 @@ const Sales = () => {
                           )}
                         </div>
                         <button
-                          onClick={() => removeFromCart(item.id)}
+                          onClick={() => removeFromCart(item._id)}
                           className="text-red-600 hover:bg-red-100 p-1 rounded transition-all ml-2"
                         >
                           <Trash2 size={14} />
@@ -719,7 +609,7 @@ const Sales = () => {
                         <span className="font-bold text-red-600">
                           KSh{" "}
                           {(
-                            ((item.sellingPrice || 0) - (item.discount || 0)) *
+                            ((item.price || 0) - (item.discount || 0)) *
                             (item.quantity || 0)
                           ).toLocaleString()}
                         </span>
@@ -798,7 +688,7 @@ const Sales = () => {
                 <div className="space-y-2 text-sm">
                   {cart.map((item) => (
                     <div
-                      key={item.id}
+                      key={item._id}
                       className="flex justify-between text-gray-700"
                     >
                       <span>
@@ -812,7 +702,7 @@ const Sales = () => {
                       <span className="font-semibold">
                         KSh{" "}
                         {(
-                          (item.sellingPrice - item.discount) *
+                          (item.price - item.discount) *
                           item.quantity
                         ).toLocaleString()}
                       </span>
@@ -899,15 +789,19 @@ const Sales = () => {
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-700">
-                            {remaining > 0 ? "Credit:" : "Change:"}
+                            {remaining > 0
+                              ? "Credit:"
+                              : remaining < 0
+                              ? "Change:"
+                              : "Balance:"}
                           </span>
                           <span
                             className={`font-bold ${
                               remaining > 0
-                                ? "text-orange-500"
+                                ? "text-orange-600"
                                 : remaining < 0
                                 ? "text-green-600"
-                                : ""
+                                : "text-gray-700"
                             }`}
                           >
                             KSh {Math.abs(remaining).toLocaleString()}
@@ -919,54 +813,46 @@ const Sales = () => {
                 </div>
               )}
 
-              {(paymentMethod === "credit" ||
-                (paymentMethod === "split" &&
-                  parseFloat(cashAmount || 0) + parseFloat(mpesaAmount || 0) <
-                    total)) && (
-                <div className="mb-4 bg-orange-50 p-4 rounded-lg border border-orange-300">
-                  <div className="flex items-start gap-2 mb-3">
-                    <AlertCircle className="text-orange-500 mt-0.5" size={20} />
-                    <h3 className="font-bold text-orange-700">
-                      Customer Info Required
-                    </h3>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-bold mb-1 text-gray-700">
-                        Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={customerName}
-                        onChange={(e) => setCustomerName(e.target.value)}
-                        placeholder="Customer name"
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-sm focus:outline-none focus:border-orange-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold mb-1 text-gray-700">
-                        Phone
-                      </label>
-                      <input
-                        type="tel"
-                        value={customerPhone}
-                        onChange={(e) => setCustomerPhone(e.target.value)}
-                        placeholder="0712345678"
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-sm focus:outline-none focus:border-orange-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+              <div className="mb-4">
+                <label className="block text-sm font-bold mb-2 text-gray-700">
+                  Customer Name
+                  {(paymentMethod === "credit" ||
+                    (paymentMethod === "split" &&
+                      total -
+                        (parseFloat(cashAmount) || 0) -
+                        (parseFloat(mpesaAmount) || 0) >
+                        0)) && <span className="text-red-600 ml-1">*</span>}
+                </label>
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Enter customer name"
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-sm focus:outline-none focus:border-red-500"
+                />
+              </div>
 
               <div className="mb-4">
-                <label className="block text-xs font-bold mb-1 text-gray-700">
+                <label className="block text-sm font-bold mb-2 text-gray-700">
+                  Customer Phone
+                </label>
+                <input
+                  type="tel"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  placeholder="0712345678"
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-sm focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-bold mb-2 text-gray-700">
                   Notes (Optional)
                 </label>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Add notes..."
+                  placeholder="Add any notes about this sale..."
                   rows="2"
                   className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-sm focus:outline-none focus:border-red-500 resize-none"
                 />
@@ -975,7 +861,7 @@ const Sales = () => {
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowCheckout(false)}
-                  className="flex-1 bg-gray-400 hover:bg-gray-500 text-white py-3 rounded-lg font-bold transition-all"
+                  className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-900 py-3 rounded-lg font-bold transition-all"
                 >
                   Cancel
                 </button>

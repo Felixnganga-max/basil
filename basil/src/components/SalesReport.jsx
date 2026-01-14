@@ -8,198 +8,125 @@ import {
   DollarSign,
   ShoppingCart,
   Tag,
+  AlertCircle,
+  RefreshCw,
+  BarChart3,
 } from "lucide-react";
 
+const API_BASE_URL = "https://basil-bhmb.vercel.app/api/reports";
+
 const SalesReport = () => {
-  const [sales, setSales] = useState([]);
-  const [inventory, setInventory] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const [reportData, setReportData] = useState(null);
   const [reportType, setReportType] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [expandedSale, setExpandedSale] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    fetchSalesReport();
+  }, [reportType, selectedDate]);
 
-  const loadData = () => {
-    // Load from localStorage
-    const salesData = JSON.parse(localStorage.getItem("sales") || "[]");
-    const inventoryData = JSON.parse(localStorage.getItem("inventory") || "[]");
-    const categoriesData = JSON.parse(
-      localStorage.getItem("categories") || "[]"
-    );
+  const fetchSalesReport = async () => {
+    setLoading(true);
+    setError(null);
 
-    setSales(salesData);
-    setInventory(inventoryData);
-    setCategories(categoriesData);
-  };
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/sales?reportType=${reportType}&selectedDate=${selectedDate}`
+      );
 
-  const getFilteredSales = () => {
-    const now = new Date(selectedDate);
+      const result = await response.json();
 
-    return sales.filter((sale) => {
-      const saleDate = new Date(sale.saleDate);
-
-      if (reportType === "daily") {
-        return saleDate.toDateString() === now.toDateString();
-      } else if (reportType === "weekly") {
-        const weekStart = new Date(now);
-        weekStart.setDate(now.getDate() - now.getDay());
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6);
-        return saleDate >= weekStart && saleDate <= weekEnd;
-      } else if (reportType === "monthly") {
-        return (
-          saleDate.getMonth() === now.getMonth() &&
-          saleDate.getFullYear() === now.getFullYear()
-        );
+      if (result.success) {
+        setReportData(result.data);
+      } else {
+        setError(result.message || "Failed to fetch report");
       }
-      return false;
-    });
+    } catch (err) {
+      setError("Failed to connect to server: " + err.message);
+      console.error("Error fetching sales report:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const calculateTotals = (filteredSales) => {
-    const totalSales = filteredSales.length;
-    const totalRevenue = filteredSales.reduce(
-      (sum, sale) => sum + sale.finalAmount,
-      0
-    );
-    const totalDiscount = filteredSales.reduce(
-      (sum, sale) => sum + sale.totalDiscount,
-      0
-    );
-    const grossRevenue = filteredSales.reduce(
-      (sum, sale) => sum + sale.totalAmount,
-      0
-    );
-    const totalItems = filteredSales.reduce(
-      (sum, sale) =>
-        sum + sale.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
-      0
-    );
+  const exportToExcel = async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/export?reportType=${reportType}&selectedDate=${selectedDate}`
+      );
 
-    return {
-      totalSales,
-      totalRevenue,
-      totalDiscount,
-      grossRevenue,
-      totalItems,
-    };
-  };
+      const result = await response.json();
 
-  const getProductSummary = (filteredSales) => {
-    const productMap = {};
+      if (result.success) {
+        const csvData = result.data;
 
-    filteredSales.forEach((sale) => {
-      sale.items.forEach((item) => {
-        if (!productMap[item.productId]) {
-          productMap[item.productId] = {
-            productId: item.productId,
-            productName: item.productName,
-            totalQuantity: 0,
-            totalRevenue: 0,
-            totalDiscount: 0,
-            actualPrice: item.unitPrice,
-            transactions: 0,
-          };
+        let csvContent = "Sales Report\n";
+        csvContent += `Report Type: ${reportType.toUpperCase()}\n`;
+        csvContent += `Date: ${selectedDate}\n`;
+        csvContent += `Generated: ${new Date().toLocaleString()}\n\n`;
+
+        if (reportData) {
+          csvContent += "SUMMARY\n";
+          csvContent += `Total Sales,${reportData.summary.totalSales}\n`;
+          csvContent += `Total Items Sold,${reportData.summary.totalItems}\n`;
+          csvContent += `Gross Revenue,${reportData.summary.grossRevenue}\n`;
+          csvContent += `Total Discounts,${reportData.summary.totalDiscount}\n`;
+          csvContent += `Net Revenue,${reportData.summary.totalRevenue}\n`;
+          csvContent += `Total Cost,${reportData.summary.totalCost}\n`;
+          csvContent += `Total Profit,${reportData.summary.totalProfit}\n`;
+          csvContent += `Profit Margin,${reportData.summary.profitMargin}%\n\n`;
         }
 
-        productMap[item.productId].totalQuantity += item.quantity;
-        productMap[item.productId].totalRevenue += item.subtotal;
-        productMap[item.productId].totalDiscount +=
-          item.discount * item.quantity;
-        productMap[item.productId].transactions += 1;
-      });
-    });
+        csvContent += "DETAILED SALES\n";
+        csvContent +=
+          "Date,Time,Sale ID,Customer,Product,Quantity,Unit Price,Discount,Subtotal,Payment Method,Status,Sold By\n";
 
-    return Object.values(productMap).sort(
-      (a, b) => b.totalRevenue - a.totalRevenue
-    );
-  };
+        csvData.forEach((row) => {
+          const csvRow = [
+            row.date,
+            row.time,
+            row.saleId,
+            `"${row.customerName}"`,
+            `"${row.items}"`,
+            row.totalAmount,
+            row.totalDiscount,
+            row.finalAmount,
+            row.profit,
+            row.paymentMethod,
+            row.status,
+            row.soldBy,
+          ].join(",");
 
-  const exportToExcel = () => {
-    const filteredSales = getFilteredSales();
-    const totals = calculateTotals(filteredSales);
+          csvContent += csvRow + "\n";
+        });
 
-    let csvContent = "Sales Report\n";
-    csvContent += `Report Type: ${reportType.toUpperCase()}\n`;
-    csvContent += `Date: ${selectedDate}\n`;
-    csvContent += `Generated: ${new Date().toLocaleString()}\n\n`;
-
-    csvContent += "SUMMARY\n";
-    csvContent += `Total Sales,${totals.totalSales}\n`;
-    csvContent += `Total Items Sold,${totals.totalItems}\n`;
-    csvContent += `Gross Revenue,${totals.grossRevenue}\n`;
-    csvContent += `Total Discounts,${totals.totalDiscount}\n`;
-    csvContent += `Net Revenue,${totals.totalRevenue}\n\n`;
-
-    csvContent += "DETAILED SALES\n";
-    csvContent +=
-      "Date,Time,Sale ID,Customer,Product,Quantity,Unit Price,Discount,Subtotal,Payment Method,Status,Sold By\n";
-
-    filteredSales.forEach((sale) => {
-      const saleDate = new Date(sale.saleDate);
-      const dateStr = saleDate.toLocaleDateString();
-      const timeStr = saleDate.toLocaleTimeString();
-
-      sale.items.forEach((item) => {
-        const row = [
-          dateStr,
-          timeStr,
-          sale.id,
-          sale.customerName || "Walk-in Customer",
-          `"${item.productName}"`,
-          item.quantity,
-          item.unitPrice,
-          item.discount,
-          item.subtotal,
-          sale.paymentMethod,
-          sale.status,
-          sale.soldByName,
-        ].join(",");
-
-        csvContent += row + "\n";
-      });
-    });
-
-    csvContent += "\nPRODUCT SUMMARY\n";
-    csvContent +=
-      "Product Name,Total Quantity,Actual Price,Total Discount,Net Revenue,Transactions\n";
-
-    const productSummary = getProductSummary(filteredSales);
-    productSummary.forEach((product) => {
-      const row = [
-        `"${product.productName}"`,
-        product.totalQuantity,
-        product.actualPrice,
-        product.totalDiscount,
-        product.totalRevenue,
-        product.transactions,
-      ].join(",");
-      csvContent += row + "\n";
-    });
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `sales_report_${reportType}_${selectedDate}.csv`
-    );
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+        const blob = new Blob([csvContent], {
+          type: "text/csv;charset=utf-8;",
+        });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute(
+          "download",
+          `sales_report_${reportType}_${selectedDate}.csv`
+        );
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (err) {
+      setError("Failed to export report: " + err.message);
+    }
   };
 
   const printReport = () => {
-    const filteredSales = getFilteredSales();
-    const totals = calculateTotals(filteredSales);
-    const productSummary = getProductSummary(filteredSales);
+    if (!reportData) return;
+
+    const { summary, productSummary, sales } = reportData;
 
     const printWindow = window.open("", "_blank");
     printWindow.document.write(`
@@ -220,7 +147,7 @@ const SalesReport = () => {
             td { padding: 10px; border-bottom: 1px solid #e5e7eb; }
             tr:nth-child(even) { background-color: #f9fafb; }
             .discount { color: #dc2626; font-weight: 600; }
-            .total-row { background-color: #dbeafe !important; font-weight: bold; }
+            .profit { color: #059669; font-weight: 600; }
             @media print {
               button { display: none; }
               .no-print { display: none; }
@@ -238,23 +165,35 @@ const SalesReport = () => {
           <div class="summary">
             <div class="summary-card">
               <div class="summary-label">Total Sales</div>
-              <div class="summary-value">${totals.totalSales}</div>
+              <div class="summary-value">${summary.totalSales}</div>
             </div>
             <div class="summary-card">
               <div class="summary-label">Total Items Sold</div>
-              <div class="summary-value">${totals.totalItems}</div>
+              <div class="summary-value">${summary.totalItems}</div>
             </div>
             <div class="summary-card">
               <div class="summary-label">Gross Revenue</div>
-              <div class="summary-value">KES ${totals.grossRevenue.toLocaleString()}</div>
+              <div class="summary-value">KES ${summary.grossRevenue.toLocaleString()}</div>
             </div>
             <div class="summary-card">
               <div class="summary-label">Total Discounts</div>
-              <div class="summary-value discount">KES ${totals.totalDiscount.toLocaleString()}</div>
+              <div class="summary-value discount">KES ${summary.totalDiscount.toLocaleString()}</div>
             </div>
             <div class="summary-card">
               <div class="summary-label">Net Revenue</div>
-              <div class="summary-value" style="color: #059669;">KES ${totals.totalRevenue.toLocaleString()}</div>
+              <div class="summary-value profit">KES ${summary.totalRevenue.toLocaleString()}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Total Cost</div>
+              <div class="summary-value">KES ${summary.totalCost.toLocaleString()}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Total Profit</div>
+              <div class="summary-value profit">KES ${summary.totalProfit.toLocaleString()}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Profit Margin</div>
+              <div class="summary-value profit">${summary.profitMargin}%</div>
             </div>
           </div>
           
@@ -267,6 +206,7 @@ const SalesReport = () => {
                 <th>Unit Price</th>
                 <th>Total Discount</th>
                 <th>Net Revenue</th>
+                <th>Profit</th>
                 <th>Transactions</th>
               </tr>
             </thead>
@@ -277,9 +217,10 @@ const SalesReport = () => {
                 <tr>
                   <td>${product.productName}</td>
                   <td>${product.totalQuantity}</td>
-                  <td>KES ${product.actualPrice.toLocaleString()}</td>
+                  <td>KES ${product.unitPrice.toLocaleString()}</td>
                   <td class="discount">KES ${product.totalDiscount.toLocaleString()}</td>
                   <td>KES ${product.totalRevenue.toLocaleString()}</td>
+                  <td class="profit">KES ${product.totalProfit.toLocaleString()}</td>
                   <td>${product.transactions}</td>
                 </tr>
               `
@@ -294,35 +235,33 @@ const SalesReport = () => {
               <tr>
                 <th>Date/Time</th>
                 <th>Sale ID</th>
-                <th>Product</th>
-                <th>Qty</th>
-                <th>Unit Price</th>
-                <th>Discount</th>
-                <th>Subtotal</th>
-                <th>Payment</th>
                 <th>Customer</th>
+                <th>Items</th>
+                <th>Gross</th>
+                <th>Discount</th>
+                <th>Final Amount</th>
+                <th>Profit</th>
+                <th>Payment</th>
+                <th>Sold By</th>
               </tr>
             </thead>
             <tbody>
-              ${filteredSales
-                .map((sale) =>
-                  sale.items
-                    .map(
-                      (item) => `
-                  <tr>
-                    <td>${new Date(sale.saleDate).toLocaleString()}</td>
-                    <td>${sale.id}</td>
-                    <td>${item.productName}</td>
-                    <td>${item.quantity}</td>
-                    <td>KES ${item.unitPrice}</td>
-                    <td class="discount">KES ${item.discount}</td>
-                    <td>KES ${item.subtotal}</td>
-                    <td>${sale.paymentMethod}</td>
-                    <td>${sale.customerName || "Walk-in"}</td>
-                  </tr>
-                `
-                    )
-                    .join("")
+              ${sales
+                .map(
+                  (sale) => `
+                <tr>
+                  <td>${new Date(sale.saleDate).toLocaleString()}</td>
+                  <td>${sale._id.substring(0, 8)}...</td>
+                  <td>${sale.customerName || "Walk-in"}</td>
+                  <td>${sale.items.length} item(s)</td>
+                  <td>KES ${sale.totalAmount.toLocaleString()}</td>
+                  <td class="discount">KES ${sale.totalDiscount.toLocaleString()}</td>
+                  <td>KES ${sale.finalAmount.toLocaleString()}</td>
+                  <td class="profit">KES ${sale.totalProfit.toLocaleString()}</td>
+                  <td>${sale.paymentMethod}</td>
+                  <td>${sale.soldByName}</td>
+                </tr>
+              `
                 )
                 .join("")}
             </tbody>
@@ -339,18 +278,67 @@ const SalesReport = () => {
     printWindow.document.close();
   };
 
-  const filteredSales = getFilteredSales();
-  const totals = calculateTotals(filteredSales);
-  const productSummary = getProductSummary(filteredSales);
+  if (loading && !reportData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-16 h-16 text-blue-500 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600 text-lg">Loading sales report...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-red-500" />
+              <div>
+                <h3 className="text-red-800 font-semibold">
+                  Error Loading Report
+                </h3>
+                <p className="text-red-600 mt-1">{error}</p>
+                <button
+                  onClick={fetchSalesReport}
+                  className="mt-4 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!reportData) {
+    return null;
+  }
+
+  const { summary, productSummary, sales, paymentBreakdown } = reportData;
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-6">
-            Sales Reports
-          </h1>
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-3xl font-bold text-gray-800">Sales Reports</h1>
+            <button
+              onClick={fetchSalesReport}
+              disabled={loading}
+              className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -360,7 +348,7 @@ const SalesReport = () => {
               <select
                 value={reportType}
                 onChange={(e) => setReportType(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full text-black px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="daily">Daily Report</option>
                 <option value="weekly">Weekly Report</option>
@@ -376,7 +364,7 @@ const SalesReport = () => {
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full text-black px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -386,27 +374,27 @@ const SalesReport = () => {
                 className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
               >
                 <FileSpreadsheet className="w-4 h-4" />
-                Export Excel
+                Export
               </button>
               <button
                 onClick={printReport}
                 className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 <Printer className="w-4 h-4" />
-                Print PDF
+                Print
               </button>
             </div>
           </div>
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 font-medium">Total Sales</p>
                 <p className="text-2xl font-bold text-gray-800 mt-2">
-                  {totals.totalSales}
+                  {summary.totalSales}
                 </p>
               </div>
               <ShoppingCart className="w-10 h-10 text-blue-500" />
@@ -418,7 +406,7 @@ const SalesReport = () => {
               <div>
                 <p className="text-sm text-gray-600 font-medium">Items Sold</p>
                 <p className="text-2xl font-bold text-gray-800 mt-2">
-                  {totals.totalItems}
+                  {summary.totalItems}
                 </p>
               </div>
               <Tag className="w-10 h-10 text-purple-500" />
@@ -432,7 +420,7 @@ const SalesReport = () => {
                   Gross Revenue
                 </p>
                 <p className="text-2xl font-bold text-gray-800 mt-2">
-                  KES {totals.grossRevenue.toLocaleString()}
+                  KES {summary.grossRevenue.toLocaleString()}
                 </p>
               </div>
               <DollarSign className="w-10 h-10 text-green-500" />
@@ -446,30 +434,79 @@ const SalesReport = () => {
                   Total Discounts
                 </p>
                 <p className="text-2xl font-bold text-red-600 mt-2">
-                  KES {totals.totalDiscount.toLocaleString()}
+                  KES {summary.totalDiscount.toLocaleString()}
                 </p>
               </div>
               <TrendingUp className="w-10 h-10 text-red-500" />
             </div>
           </div>
+        </div>
 
-          <div className="bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-md p-6">
+        {/* Profit & Revenue Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-white font-medium">Net Revenue</p>
                 <p className="text-2xl font-bold text-white mt-2">
-                  KES {totals.totalRevenue.toLocaleString()}
+                  KES {summary.totalRevenue.toLocaleString()}
                 </p>
               </div>
               <DollarSign className="w-10 h-10 text-white" />
             </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-white font-medium">Total Profit</p>
+                <p className="text-2xl font-bold text-white mt-2">
+                  KES {summary.totalProfit.toLocaleString()}
+                </p>
+              </div>
+              <TrendingUp className="w-10 h-10 text-white" />
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-white font-medium">Profit Margin</p>
+                <p className="text-2xl font-bold text-white mt-2">
+                  {summary.profitMargin}%
+                </p>
+              </div>
+              <BarChart3 className="w-10 h-10 text-white" />
+            </div>
+          </div>
+        </div>
+
+        {/* Payment Breakdown */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-800 mb-4">
+            Payment Method Breakdown
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {Object.entries(paymentBreakdown).map(([method, amount]) => (
+              <div
+                key={method}
+                className="border border-gray-200 rounded-lg p-4"
+              >
+                <p className="text-sm text-gray-600 font-medium uppercase">
+                  {method}
+                </p>
+                <p className="text-xl font-bold text-gray-800 mt-2">
+                  KES {amount.toLocaleString()}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Product Performance */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4">
-            Product Performance
+            Product Performance ({productSummary.length} Products)
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -491,6 +528,9 @@ const SalesReport = () => {
                     Net Revenue
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Profit
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Transactions
                   </th>
                 </tr>
@@ -505,13 +545,16 @@ const SalesReport = () => {
                       {product.totalQuantity}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-700">
-                      KES {product.actualPrice.toLocaleString()}
+                      KES {product.unitPrice.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-red-600 font-medium">
                       KES {product.totalDiscount.toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-green-600 font-bold">
+                    <td className="px-6 py-4 whitespace-nowrap text-blue-600 font-bold">
                       KES {product.totalRevenue.toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-green-600 font-bold">
+                      KES {product.totalProfit.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-700">
                       {product.transactions}
@@ -526,7 +569,7 @@ const SalesReport = () => {
         {/* Detailed Transactions */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4">
-            Detailed Transactions
+            Detailed Transactions ({sales.length} Sales)
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -539,25 +582,25 @@ const SalesReport = () => {
                     Sale ID
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Product
+                    Customer
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Qty
+                    Items
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Unit Price
+                    Gross
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Discount
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Subtotal
+                    Final Amount
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Profit
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Payment
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Customer
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Sold By
@@ -565,68 +608,63 @@ const SalesReport = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredSales.map((sale) =>
-                  sale.items.map((item, itemIndex) => (
-                    <tr
-                      key={`${sale.id}-${itemIndex}`}
-                      className="hover:bg-gray-50"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {new Date(sale.saleDate).toLocaleDateString()}
-                        <br />
-                        <span className="text-xs text-gray-500">
-                          {new Date(sale.saleDate).toLocaleTimeString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {sale.id}
-                      </td>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                        {item.productName}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {item.quantity}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        KES {item.unitPrice.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
-                        {item.discount > 0
-                          ? `KES ${item.discount.toLocaleString()}`
-                          : "-"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
-                        KES {item.subtotal.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            sale.paymentMethod === "cash"
-                              ? "bg-green-100 text-green-800"
-                              : sale.paymentMethod === "mpesa"
-                              ? "bg-blue-100 text-blue-800"
-                              : sale.paymentMethod === "credit"
-                              ? "bg-red-100 text-red-800"
-                              : "bg-purple-100 text-purple-800"
-                          }`}
-                        >
-                          {sale.paymentMethod}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {sale.customerName || "Walk-in"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {sale.soldByName}
-                      </td>
-                    </tr>
-                  ))
-                )}
+                {sales.map((sale) => (
+                  <tr key={sale._id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {new Date(sale.saleDate).toLocaleDateString()}
+                      <br />
+                      <span className="text-xs text-gray-500">
+                        {new Date(sale.saleDate).toLocaleTimeString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono">
+                      {sale._id.substring(0, 8)}...
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {sale.customerName || "Walk-in"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {sale.items.length} item(s)
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      KES {sale.totalAmount.toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                      {sale.totalDiscount > 0
+                        ? `KES ${sale.totalDiscount.toLocaleString()}`
+                        : "-"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
+                      KES {sale.finalAmount.toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-600">
+                      KES {sale.totalProfit.toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          sale.paymentMethod === "cash"
+                            ? "bg-green-100 text-green-800"
+                            : sale.paymentMethod === "mpesa"
+                            ? "bg-blue-100 text-blue-800"
+                            : sale.paymentMethod === "credit"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-purple-100 text-purple-800"
+                        }`}
+                      >
+                        {sale.paymentMethod}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {sale.soldByName}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
-          {filteredSales.length === 0 && (
+          {sales.length === 0 && (
             <div className="text-center py-12">
               <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500 text-lg">
