@@ -1,12 +1,12 @@
+const dotenv = require("dotenv");
+dotenv.config();
+
 const express = require("express");
 const cors = require("cors");
-const dotenv = require("dotenv");
-const prisma = require("./models/prisma");
+const prisma = require("../prisma");
 const inventoryRoutes = require("./routes/inventory");
 const salesRoutes = require("./routes/sales");
 const reportRoutes = require("./routes/reports");
-
-dotenv.config();
 
 const app = express();
 
