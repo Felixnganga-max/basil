@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== CATEGORY ====================
+model Category {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  subcategories Json     @default("[]")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+// ==================== PRODUCT ====================
+model Product {
+  id            String   @id @default(cuid())
+  name          String
+  description   String   @default("")
+  categoryId    String
+  category      Category @relation(fields: [categoryId], references: [id])
+  categoryName  String
+  subcategory   String   @default("")
+  price         Float
+  costPrice     Float    @default(0)
+  quantity      Int      @default(0)
+  minQuantity   Int      @default(5)
+  sku           String   @unique
+  lastRestocked DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  saleItems      SaleItem[]
+  restockHistory RestockHistory[]
+
+  @@map("products")
+}
+
+// ==================== SALE ====================
+model Sale {
+  id             String        @id @default(cuid())
+  saleDate       DateTime      @default(now())
+  totalAmount    Float
+  totalDiscount  Float         @default(0)
+  finalAmount    Float
+  totalCost      Float
+  totalProfit    Float
+  paymentMethod  PaymentMethod
+  cashAmount     Float         @default(0)
+  mpesaAmount    Float         @default(0)
+  creditAmount   Float         @default(0)
+  customerId     String?
+  customerName   String?
+  customerPhone  String?
+  soldBy         String
+  soldByName     String
+  status         SaleStatus    @default(COMPLETED)
+  notes          String        @default("")
+  isReturned     Boolean       @default(false)
+  returnedAt     DateTime?
+  returnedBy     String?
+  returnedByName String?
+  returnNotes    String        @default("")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  items  SaleItem[]
+  credit Credit?
+
+  @@index([saleDate])
+  @@index([status])
+  @@index([customerName])
+  @@index([soldBy])
+  @@index([isReturned])
+  @@map("sales")
+}
+
+// ==================== SALE ITEM ====================
+model SaleItem {
+  id          String  @id @default(cuid())
+  saleId      String
+  sale        Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  productName String
+  sku         String  @default("")
+  quantity    Int
+  costPrice   Float
+  unitPrice   Float
+  discount    Float   @default(0)
+  subtotal    Float
+  profit      Float
+
+  @@map("sale_items")
+}
+
+// ==================== CREDIT ====================
+model Credit {
+  id               String       @id @default(cuid())
+  customerId       String
+  customerName     String
+  customerPhone    String?
+  saleId           String       @unique
+  sale             Sale         @relation(fields: [saleId], references: [id])
+  totalAmount      Float
+  amountPaid       Float        @default(0)
+  remainingBalance Float
+  status           CreditStatus @default(ACTIVE)
+  notes            String       @default("")
+  creditDate       DateTime     @default(now())
+  dueDate          DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  paymentHistory CreditPayment[]
+
+  @@index([customerId])
+  @@index([customerName])
+  @@index([status])
+  @@map("credits")
+}
+
+// ==================== CREDIT PAYMENT HISTORY ====================
+model CreditPayment {
+  id             String      @id @default(cuid())
+  creditId       String
+  credit         Credit      @relation(fields: [creditId], references: [id], onDelete: Cascade)
+  amount         Float
+  paymentMethod  CashOrMpesa
+  paidAt         DateTime    @default(now())
+  receivedBy     String      @default("")
+  receivedByName String      @default("")
+  notes          String      @default("")
+
+  @@map("credit_payments")
+}
+
+// ==================== RESTOCK HISTORY ====================
+model RestockHistory {
+  id               String   @id @default(cuid())
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id])
+  productName      String
+  quantityAdded    Int
+  previousQuantity Int
+  newQuantity      Int
+  costPrice        Float
+  totalCost        Float
+  restockedBy      String   @default("Admin User")
+  restockedByName  String   @default("Admin User")
+  supplier         String   @default("")
+  notes            String   @default("")
+  date             DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("restock_history")
+}
+
+// ==================== ENUMS ====================
+enum PaymentMethod {
+  cash
+  mpesa
+  split
+  credit
+}
+
+enum SaleStatus {
+  COMPLETED
+  PARTIAL
+  CREDIT
+  RETURNED
+}
+
+enum CreditStatus {
+  ACTIVE
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum CashOrMpesa {
+  cash
+  mpesa
+}

@@ -1,4 +1,4 @@
-const { Sale, Credit, Product } = require("../models/sales");
+const { Sale, Credit, Product } = require("../../prisma");
 // const { Product } = require("../models/inventory");
 
 // ==================== SALES CONTROLLERS ====================
@@ -98,7 +98,7 @@ exports.getSaleById = async (req, res) => {
   try {
     const sale = await Sale.findById(req.params.id).populate(
       "items.productId",
-      "name sku category subcategory"
+      "name sku category subcategory",
     );
 
     if (!sale) {
@@ -169,7 +169,7 @@ exports.createSale = async (req, res) => {
       }
 
       console.log(
-        `Product found: ${product.name}, Stock: ${product.quantity}, Requested: ${item.quantity}`
+        `Product found: ${product.name}, Stock: ${product.quantity}, Requested: ${item.quantity}`,
       );
 
       if (product.quantity < item.quantity) {
@@ -217,7 +217,7 @@ exports.createSale = async (req, res) => {
     // Update inventory quantities - REDUCE stock
     for (const item of items) {
       console.log(
-        `Updating stock for product: ${item.productId}, reducing by ${item.quantity}`
+        `Updating stock for product: ${item.productId}, reducing by ${item.quantity}`,
       );
       const product = await Product.findByIdAndUpdate(
         item.productId,
@@ -225,7 +225,7 @@ exports.createSale = async (req, res) => {
           $inc: { quantity: -item.quantity },
           updatedAt: Date.now(),
         },
-        { new: true }
+        { new: true },
       );
 
       if (!product) {
@@ -241,7 +241,7 @@ exports.createSale = async (req, res) => {
     // Create credit record if needed
     if (paymentDetails.credit > 0) {
       console.log(
-        `Creating credit record for amount: ${paymentDetails.credit}`
+        `Creating credit record for amount: ${paymentDetails.credit}`,
       );
       await Credit.create({
         customerId: sale.customerId,
@@ -262,7 +262,7 @@ exports.createSale = async (req, res) => {
     // Populate the sale before returning
     const populatedSale = await Sale.findById(sale._id).populate(
       "items.productId",
-      "name sku category subcategory"
+      "name sku category subcategory",
     );
 
     console.log("=== SALE COMPLETED SUCCESSFULLY ===");
@@ -315,7 +315,7 @@ exports.returnSale = async (req, res) => {
           $inc: { quantity: item.quantity },
           updatedAt: Date.now(),
         },
-        { new: true }
+        { new: true },
       );
 
       if (!product) {
@@ -345,13 +345,13 @@ exports.returnSale = async (req, res) => {
           status: "cancelled",
           notes: `Sale returned: ${returnNotes || "No reason provided"}`,
           updatedAt: Date.now(),
-        }
+        },
       );
     }
 
     const populatedSale = await Sale.findById(sale._id).populate(
       "items.productId",
-      "name sku category subcategory"
+      "name sku category subcategory",
     );
 
     res.status(200).json({
