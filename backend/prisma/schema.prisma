@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = "postgresql://postgres:1234@localhost:5432/bazil?schema=public"
+  provider  = "postgresql"
+  url       = "postgresql://postgres.jzktmoseoprmitkevsvr:{Bazilautospares}@aws-0-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+  directUrl = "postgresql://postgres.jzktmoseoprmitkevsvr:{Bazilautospares}@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
 }
 
 // ==================== CATEGORY ====================
