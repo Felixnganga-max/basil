@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 // API Configuration
-const API_BASE_URL = "http://localhost:5000/api/inventory";
+const API_BASE_URL = "https://basil-ozi8.vercel.app/api/inventory";
 
 const api = {
   getCategories: () =>

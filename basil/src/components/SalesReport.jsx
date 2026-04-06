@@ -12,7 +12,7 @@ import {
   BarChart3,
 } from "lucide-react";
 
-const API_BASE_URL = "http://localhost:5000/api/reports";
+const API_BASE_URL = "https://basil-ozi8.vercel.app/api/reports";
 
 const SalesReport = () => {
   const [reportData, setReportData] = useState(null);

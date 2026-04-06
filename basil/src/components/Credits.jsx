@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 // ── API ──────────────────────────────────────────────────────────────────────
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = "https://basil-ozi8.vercel.app/api";
 
 const api = {
   getCredits: (query = "") =>
