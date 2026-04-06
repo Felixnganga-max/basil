@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   Calendar,
-  Download,
   Printer,
   FileSpreadsheet,
   TrendingUp,
@@ -13,13 +12,13 @@ import {
   BarChart3,
 } from "lucide-react";
 
-const API_BASE_URL = "https://basil-bhmb.vercel.app/api/reports";
+const API_BASE_URL = "http://localhost:5000/api/reports";
 
 const SalesReport = () => {
   const [reportData, setReportData] = useState(null);
   const [reportType, setReportType] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0]
+    new Date().toISOString().split("T")[0],
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -31,14 +30,11 @@ const SalesReport = () => {
   const fetchSalesReport = async () => {
     setLoading(true);
     setError(null);
-
     try {
       const response = await fetch(
-        `${API_BASE_URL}/sales?reportType=${reportType}&selectedDate=${selectedDate}`
+        `${API_BASE_URL}/sales?reportType=${reportType}&selectedDate=${selectedDate}`,
       );
-
       const result = await response.json();
-
       if (result.success) {
         setReportData(result.data);
       } else {
@@ -46,23 +42,20 @@ const SalesReport = () => {
       }
     } catch (err) {
       setError("Failed to connect to server: " + err.message);
-      console.error("Error fetching sales report:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const exportToExcel = async () => {
+  const exportToCSV = async () => {
     try {
       const response = await fetch(
-        `${API_BASE_URL}/export?reportType=${reportType}&selectedDate=${selectedDate}`
+        `${API_BASE_URL}/export?reportType=${reportType}&selectedDate=${selectedDate}`,
       );
-
       const result = await response.json();
 
       if (result.success) {
         const csvData = result.data;
-
         let csvContent = "Sales Report\n";
         csvContent += `Report Type: ${reportType.toUpperCase()}\n`;
         csvContent += `Date: ${selectedDate}\n`;
@@ -82,36 +75,34 @@ const SalesReport = () => {
 
         csvContent += "DETAILED SALES\n";
         csvContent +=
-          "Date,Time,Sale ID,Customer,Product,Quantity,Unit Price,Discount,Subtotal,Payment Method,Status,Sold By\n";
+          "Date,Time,Sale ID,Customer,Items,Total Amount,Discount,Final Amount,Profit,Payment Method,Status,Sold By\n";
 
         csvData.forEach((row) => {
-          const csvRow = [
-            row.date,
-            row.time,
-            row.saleId,
-            `"${row.customerName}"`,
-            `"${row.items}"`,
-            row.totalAmount,
-            row.totalDiscount,
-            row.finalAmount,
-            row.profit,
-            row.paymentMethod,
-            row.status,
-            row.soldBy,
-          ].join(",");
-
-          csvContent += csvRow + "\n";
+          csvContent +=
+            [
+              row.date,
+              row.time,
+              row.saleId,
+              `"${row.customerName}"`,
+              `"${row.items}"`,
+              row.totalAmount,
+              row.totalDiscount,
+              row.finalAmount,
+              row.profit,
+              row.paymentMethod,
+              row.status,
+              row.soldBy,
+            ].join(",") + "\n";
         });
 
         const blob = new Blob([csvContent], {
           type: "text/csv;charset=utf-8;",
         });
         const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        link.setAttribute("href", url);
+        link.setAttribute("href", URL.createObjectURL(blob));
         link.setAttribute(
           "download",
-          `sales_report_${reportType}_${selectedDate}.csv`
+          `sales_report_${reportType}_${selectedDate}.csv`,
         );
         link.style.visibility = "hidden";
         document.body.appendChild(link);
@@ -125,7 +116,6 @@ const SalesReport = () => {
 
   const printReport = () => {
     if (!reportData) return;
-
     const { summary, productSummary, sales } = reportData;
 
     const printWindow = window.open("", "_blank");
@@ -148,130 +138,68 @@ const SalesReport = () => {
             tr:nth-child(even) { background-color: #f9fafb; }
             .discount { color: #dc2626; font-weight: 600; }
             .profit { color: #059669; font-weight: 600; }
-            @media print {
-              button { display: none; }
-              .no-print { display: none; }
-            }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>MOTORBIKE SPARE PARTS SHOP</h1>
-            <h2>Sales Report - ${reportType.toUpperCase()}</h2>
+            <h1>SALES REPORT</h1>
+            <h2>${reportType.toUpperCase()} Report</h2>
             <p><strong>Date:</strong> ${selectedDate} | <strong>Generated:</strong> ${new Date().toLocaleString()}</p>
           </div>
-          
-          <h2>Sales Summary</h2>
+          <h2>Summary</h2>
           <div class="summary">
-            <div class="summary-card">
-              <div class="summary-label">Total Sales</div>
-              <div class="summary-value">${summary.totalSales}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Total Items Sold</div>
-              <div class="summary-value">${summary.totalItems}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Gross Revenue</div>
-              <div class="summary-value">KES ${summary.grossRevenue.toLocaleString()}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Total Discounts</div>
-              <div class="summary-value discount">KES ${summary.totalDiscount.toLocaleString()}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Net Revenue</div>
-              <div class="summary-value profit">KES ${summary.totalRevenue.toLocaleString()}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Total Cost</div>
-              <div class="summary-value">KES ${summary.totalCost.toLocaleString()}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Total Profit</div>
-              <div class="summary-value profit">KES ${summary.totalProfit.toLocaleString()}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Profit Margin</div>
-              <div class="summary-value profit">${summary.profitMargin}%</div>
-            </div>
+            <div class="summary-card"><div class="summary-label">Total Sales</div><div class="summary-value">${summary.totalSales}</div></div>
+            <div class="summary-card"><div class="summary-label">Total Items Sold</div><div class="summary-value">${summary.totalItems}</div></div>
+            <div class="summary-card"><div class="summary-label">Gross Revenue</div><div class="summary-value">KES ${summary.grossRevenue.toLocaleString()}</div></div>
+            <div class="summary-card"><div class="summary-label">Total Discounts</div><div class="summary-value discount">KES ${summary.totalDiscount.toLocaleString()}</div></div>
+            <div class="summary-card"><div class="summary-label">Net Revenue</div><div class="summary-value profit">KES ${summary.totalRevenue.toLocaleString()}</div></div>
+            <div class="summary-card"><div class="summary-label">Total Cost</div><div class="summary-value">KES ${summary.totalCost.toLocaleString()}</div></div>
+            <div class="summary-card"><div class="summary-label">Total Profit</div><div class="summary-value profit">KES ${summary.totalProfit.toLocaleString()}</div></div>
+            <div class="summary-card"><div class="summary-label">Profit Margin</div><div class="summary-value profit">${summary.profitMargin}%</div></div>
           </div>
-          
           <h2>Product Performance</h2>
           <table>
-            <thead>
-              <tr>
-                <th>Product Name</th>
-                <th>Qty Sold</th>
-                <th>Unit Price</th>
-                <th>Total Discount</th>
-                <th>Net Revenue</th>
-                <th>Profit</th>
-                <th>Transactions</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Revenue</th><th>Profit</th><th>Txns</th></tr></thead>
             <tbody>
               ${productSummary
                 .map(
-                  (product) => `
+                  (p) => `
                 <tr>
-                  <td>${product.productName}</td>
-                  <td>${product.totalQuantity}</td>
-                  <td>KES ${product.unitPrice.toLocaleString()}</td>
-                  <td class="discount">KES ${product.totalDiscount.toLocaleString()}</td>
-                  <td>KES ${product.totalRevenue.toLocaleString()}</td>
-                  <td class="profit">KES ${product.totalProfit.toLocaleString()}</td>
-                  <td>${product.transactions}</td>
-                </tr>
-              `
+                  <td>${p.productName}</td><td>${p.totalQuantity}</td>
+                  <td>KES ${(p.unitPrice || 0).toLocaleString()}</td>
+                  <td class="discount">KES ${(p.totalDiscount || 0).toLocaleString()}</td>
+                  <td>KES ${(p.totalRevenue || 0).toLocaleString()}</td>
+                  <td class="profit">KES ${(p.totalProfit || 0).toLocaleString()}</td>
+                  <td>${p.transactions}</td>
+                </tr>`,
                 )
                 .join("")}
             </tbody>
           </table>
-          
-          <h2>Detailed Transactions</h2>
+          <h2>Transactions</h2>
           <table>
-            <thead>
-              <tr>
-                <th>Date/Time</th>
-                <th>Sale ID</th>
-                <th>Customer</th>
-                <th>Items</th>
-                <th>Gross</th>
-                <th>Discount</th>
-                <th>Final Amount</th>
-                <th>Profit</th>
-                <th>Payment</th>
-                <th>Sold By</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Date/Time</th><th>Sale ID</th><th>Customer</th><th>Items</th><th>Gross</th><th>Discount</th><th>Final</th><th>Profit</th><th>Payment</th><th>Sold By</th></tr></thead>
             <tbody>
               ${sales
                 .map(
                   (sale) => `
                 <tr>
                   <td>${new Date(sale.saleDate).toLocaleString()}</td>
-                  <td>${sale._id.substring(0, 8)}...</td>
+                  <td>${(sale._id || sale.id || "").substring(0, 8)}...</td>
                   <td>${sale.customerName || "Walk-in"}</td>
                   <td>${sale.items.length} item(s)</td>
-                  <td>KES ${sale.totalAmount.toLocaleString()}</td>
-                  <td class="discount">KES ${sale.totalDiscount.toLocaleString()}</td>
-                  <td>KES ${sale.finalAmount.toLocaleString()}</td>
-                  <td class="profit">KES ${sale.totalProfit.toLocaleString()}</td>
+                  <td>KES ${(sale.totalAmount || 0).toLocaleString()}</td>
+                  <td class="discount">KES ${(sale.totalDiscount || 0).toLocaleString()}</td>
+                  <td>KES ${(sale.finalAmount || 0).toLocaleString()}</td>
+                  <td class="profit">KES ${(sale.totalProfit || 0).toLocaleString()}</td>
                   <td>${sale.paymentMethod}</td>
                   <td>${sale.soldByName}</td>
-                </tr>
-              `
+                </tr>`,
                 )
                 .join("")}
             </tbody>
           </table>
-          
-          <script>
-            window.onload = function() {
-              window.print();
-            }
-          </script>
+          <script>window.onload = function() { window.print(); }</script>
         </body>
       </html>
     `);
@@ -303,7 +231,7 @@ const SalesReport = () => {
                 <p className="text-red-600 mt-1">{error}</p>
                 <button
                   onClick={fetchSalesReport}
-                  className="mt-4 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                  className="mt-4 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
                 >
                   Retry
                 </button>
@@ -315,9 +243,7 @@ const SalesReport = () => {
     );
   }
 
-  if (!reportData) {
-    return null;
-  }
+  if (!reportData) return null;
 
   const { summary, productSummary, sales, paymentBreakdown } = reportData;
 
@@ -331,7 +257,7 @@ const SalesReport = () => {
             <button
               onClick={fetchSalesReport}
               disabled={loading}
-              className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 disabled:opacity-50"
             >
               <RefreshCw
                 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
@@ -348,14 +274,13 @@ const SalesReport = () => {
               <select
                 value={reportType}
                 onChange={(e) => setReportType(e.target.value)}
-                className="w-full text-black px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full text-black px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="daily">Daily Report</option>
                 <option value="weekly">Weekly Report</option>
                 <option value="monthly">Monthly Report</option>
               </select>
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Date
@@ -364,24 +289,21 @@ const SalesReport = () => {
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full text-black px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full text-black px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
-
             <div className="flex items-end gap-2">
               <button
-                onClick={exportToExcel}
-                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                onClick={exportToCSV}
+                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"
               >
-                <FileSpreadsheet className="w-4 h-4" />
-                Export
+                <FileSpreadsheet className="w-4 h-4" /> Export CSV
               </button>
               <button
                 onClick={printReport}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"
               >
-                <Printer className="w-4 h-4" />
-                Print
+                <Printer className="w-4 h-4" /> Print
               </button>
             </div>
           </div>
@@ -389,85 +311,77 @@ const SalesReport = () => {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 font-medium">Total Sales</p>
-                <p className="text-2xl font-bold text-gray-800 mt-2">
-                  {summary.totalSales}
-                </p>
+          {[
+            {
+              label: "Total Sales",
+              value: summary.totalSales,
+              icon: <ShoppingCart className="w-10 h-10 text-blue-500" />,
+              format: "number",
+            },
+            {
+              label: "Items Sold",
+              value: summary.totalItems,
+              icon: <Tag className="w-10 h-10 text-purple-500" />,
+              format: "number",
+            },
+            {
+              label: "Gross Revenue",
+              value: summary.grossRevenue,
+              icon: <DollarSign className="w-10 h-10 text-green-500" />,
+              format: "currency",
+            },
+            {
+              label: "Total Discounts",
+              value: summary.totalDiscount,
+              icon: <TrendingUp className="w-10 h-10 text-red-500" />,
+              format: "currency",
+              red: true,
+            },
+          ].map((card) => (
+            <div key={card.label} className="bg-white rounded-lg shadow-md p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 font-medium">
+                    {card.label}
+                  </p>
+                  <p
+                    className={`text-2xl font-bold mt-2 ${card.red ? "text-red-600" : "text-gray-800"}`}
+                  >
+                    {card.format === "currency"
+                      ? `KES ${(card.value || 0).toLocaleString()}`
+                      : card.value}
+                  </p>
+                </div>
+                {card.icon}
               </div>
-              <ShoppingCart className="w-10 h-10 text-blue-500" />
             </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 font-medium">Items Sold</p>
-                <p className="text-2xl font-bold text-gray-800 mt-2">
-                  {summary.totalItems}
-                </p>
-              </div>
-              <Tag className="w-10 h-10 text-purple-500" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 font-medium">
-                  Gross Revenue
-                </p>
-                <p className="text-2xl font-bold text-gray-800 mt-2">
-                  KES {summary.grossRevenue.toLocaleString()}
-                </p>
-              </div>
-              <DollarSign className="w-10 h-10 text-green-500" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 font-medium">
-                  Total Discounts
-                </p>
-                <p className="text-2xl font-bold text-red-600 mt-2">
-                  KES {summary.totalDiscount.toLocaleString()}
-                </p>
-              </div>
-              <TrendingUp className="w-10 h-10 text-red-500" />
-            </div>
-          </div>
+          ))}
         </div>
 
-        {/* Profit & Revenue Cards */}
+        {/* Profit Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-white font-medium">Net Revenue</p>
                 <p className="text-2xl font-bold text-white mt-2">
-                  KES {summary.totalRevenue.toLocaleString()}
+                  KES {(summary.totalRevenue || 0).toLocaleString()}
                 </p>
               </div>
               <DollarSign className="w-10 h-10 text-white" />
             </div>
           </div>
-
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-white font-medium">Total Profit</p>
                 <p className="text-2xl font-bold text-white mt-2">
-                  KES {summary.totalProfit.toLocaleString()}
+                  KES {(summary.totalProfit || 0).toLocaleString()}
                 </p>
               </div>
               <TrendingUp className="w-10 h-10 text-white" />
             </div>
           </div>
-
           <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -496,7 +410,7 @@ const SalesReport = () => {
                   {method}
                 </p>
                 <p className="text-xl font-bold text-gray-800 mt-2">
-                  KES {amount.toLocaleString()}
+                  KES {(amount || 0).toLocaleString()}
                 </p>
               </div>
             ))}
@@ -512,27 +426,22 @@ const SalesReport = () => {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b-2 border-gray-200">
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Product Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Qty Sold
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Unit Price
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Total Discount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Net Revenue
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Profit
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Transactions
-                  </th>
+                  {[
+                    "Product Name",
+                    "Qty Sold",
+                    "Unit Price",
+                    "Total Discount",
+                    "Net Revenue",
+                    "Profit",
+                    "Transactions",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -545,16 +454,16 @@ const SalesReport = () => {
                       {product.totalQuantity}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-700">
-                      KES {product.unitPrice.toLocaleString()}
+                      KES {(product.unitPrice || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-red-600 font-medium">
-                      KES {product.totalDiscount.toLocaleString()}
+                      KES {(product.totalDiscount || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-blue-600 font-bold">
-                      KES {product.totalRevenue.toLocaleString()}
+                      KES {(product.totalRevenue || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-green-600 font-bold">
-                      KES {product.totalProfit.toLocaleString()}
+                      KES {(product.totalProfit || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-700">
                       {product.transactions}
@@ -575,41 +484,32 @@ const SalesReport = () => {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b-2 border-gray-200">
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date/Time
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Sale ID
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Customer
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Items
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Gross
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Discount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Final Amount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Profit
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Payment
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Sold By
-                  </th>
+                  {[
+                    "Date/Time",
+                    "Sale ID",
+                    "Customer",
+                    "Items",
+                    "Gross",
+                    "Discount",
+                    "Final Amount",
+                    "Profit",
+                    "Payment",
+                    "Sold By",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {sales.map((sale) => (
-                  <tr key={sale._id} className="hover:bg-gray-50">
+                  <tr key={sale._id || sale.id} className="hover:bg-gray-50">
+                    {" "}
+                    {/* ✅ supports both */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {new Date(sale.saleDate).toLocaleDateString()}
                       <br />
@@ -618,7 +518,7 @@ const SalesReport = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono">
-                      {sale._id.substring(0, 8)}...
+                      {(sale._id || sale.id || "").substring(0, 8)}...
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {sale.customerName || "Walk-in"}
@@ -627,7 +527,7 @@ const SalesReport = () => {
                       {sale.items.length} item(s)
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                      KES {sale.totalAmount.toLocaleString()}
+                      KES {(sale.totalAmount || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
                       {sale.totalDiscount > 0
@@ -635,10 +535,10 @@ const SalesReport = () => {
                         : "-"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
-                      KES {sale.finalAmount.toLocaleString()}
+                      KES {(sale.finalAmount || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-600">
-                      KES {sale.totalProfit.toLocaleString()}
+                      KES {(sale.totalProfit || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <span
@@ -646,10 +546,10 @@ const SalesReport = () => {
                           sale.paymentMethod === "cash"
                             ? "bg-green-100 text-green-800"
                             : sale.paymentMethod === "mpesa"
-                            ? "bg-blue-100 text-blue-800"
-                            : sale.paymentMethod === "credit"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-purple-100 text-purple-800"
+                              ? "bg-blue-100 text-blue-800"
+                              : sale.paymentMethod === "credit"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-purple-100 text-purple-800"
                         }`}
                       >
                         {sale.paymentMethod}

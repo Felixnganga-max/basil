@@ -15,11 +15,9 @@ import {
 } from "lucide-react";
 
 // API Configuration
-const API_BASE_URL = "https://basil-bhmb.vercel.app/api/inventory";
+const API_BASE_URL = "http://localhost:5000/api/inventory";
 
-// API Helper Functions
 const api = {
-  // Categories
   getCategories: () =>
     fetch(`${API_BASE_URL}/categories`).then((r) => r.json()),
   createCategory: (data) =>
@@ -29,11 +27,10 @@ const api = {
       body: JSON.stringify(data),
     }).then((r) => r.json()),
   deleteCategory: (id) =>
-    fetch(`${API_BASE_URL}/categories/${id}`, {
-      method: "DELETE",
-    }).then((r) => r.json()),
+    fetch(`${API_BASE_URL}/categories/${id}`, { method: "DELETE" }).then((r) =>
+      r.json(),
+    ),
 
-  // Products
   getProducts: (query = "") =>
     fetch(`${API_BASE_URL}/products${query}`).then((r) => r.json()),
   createProduct: (data) =>
@@ -49,11 +46,10 @@ const api = {
       body: JSON.stringify(data),
     }).then((r) => r.json()),
   deleteProduct: (id) =>
-    fetch(`${API_BASE_URL}/products/${id}`, {
-      method: "DELETE",
-    }).then((r) => r.json()),
+    fetch(`${API_BASE_URL}/products/${id}`, { method: "DELETE" }).then((r) =>
+      r.json(),
+    ),
 
-  // Restock
   restockProduct: (id, data) =>
     fetch(`${API_BASE_URL}/products/${id}/restock`, {
       method: "POST",
@@ -63,18 +59,34 @@ const api = {
   getRestockHistory: () =>
     fetch(`${API_BASE_URL}/restock-history`).then((r) => r.json()),
 
-  // Stats
   getStats: () => fetch(`${API_BASE_URL}/stats`).then((r) => r.json()),
+};
+
+// Helper: Prisma stores subcategories as JSON — normalize to array
+const getSubcategories = (cat) => {
+  if (!cat) return [];
+  const subs = cat.subcategories;
+  if (Array.isArray(subs)) return subs;
+  if (typeof subs === "string") {
+    try {
+      return JSON.parse(subs);
+    } catch {
+      return [];
+    }
+  }
+  return [];
 };
 
 const InventoryManagement = () => {
   const [categories, setCategories] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [restockHistory, setRestockHistory] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser] = useState({
+    id: "user_default",
+    fullName: "Admin User",
+  });
   const [loading, setLoading] = useState(true);
 
-  // UI State
   const [activeTab, setActiveTab] = useState("products");
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState("");
@@ -83,7 +95,6 @@ const InventoryManagement = () => {
   const [filterCategory, setFilterCategory] = useState("all");
   const [lowStockOnly, setLowStockOnly] = useState(false);
 
-  // Form States
   const [productForm, setProductForm] = useState({
     name: "",
     description: "",
@@ -95,12 +106,10 @@ const InventoryManagement = () => {
     minQuantity: "",
     sku: "",
   });
-
   const [categoryForm, setCategoryForm] = useState({
     name: "",
     subcategories: "",
   });
-
   const [restockForm, setRestockForm] = useState({
     quantityToAdd: "",
     costPrice: "",
@@ -108,7 +117,6 @@ const InventoryManagement = () => {
     notes: "",
   });
 
-  // Load data from API on mount
   useEffect(() => {
     loadData();
   }, []);
@@ -116,48 +124,30 @@ const InventoryManagement = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-
-      // Load categories
-      const categoriesRes = await api.getCategories();
-      if (categoriesRes.success) {
-        setCategories(categoriesRes.data);
-      }
-
-      // Load inventory
-      const inventoryRes = await api.getProducts();
-      if (inventoryRes.success) {
-        setInventory(inventoryRes.data);
-      }
-
-      // Load restock history
-      const restockRes = await api.getRestockHistory();
-      if (restockRes.success) {
-        setRestockHistory(restockRes.data);
-      }
-
-      // Set current user
-      const defaultUser = {
-        id: "user_default",
-        fullName: "Admin User",
-      };
-      setCurrentUser(defaultUser);
+      const [categoriesRes, inventoryRes, restockRes] = await Promise.all([
+        api.getCategories(),
+        api.getProducts(),
+        api.getRestockHistory(),
+      ]);
+      if (categoriesRes.success) setCategories(categoriesRes.data);
+      if (inventoryRes.success) setInventory(inventoryRes.data);
+      if (restockRes.success) setRestockHistory(restockRes.data);
     } catch (error) {
       console.error("Error loading data:", error);
       alert(
-        "Failed to load data. Please check if the backend is running on http://localhost:5000"
+        "Failed to load data. Please check if the backend is running on http://localhost:5000",
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // Category Management
+  // ==================== CATEGORY ====================
   const handleAddCategory = async () => {
     if (!categoryForm.name.trim()) {
       alert("Category name is required");
       return;
     }
-
     try {
       const response = await api.createCategory({
         name: categoryForm.name.trim(),
@@ -165,53 +155,46 @@ const InventoryManagement = () => {
           ? categoryForm.subcategories
               .split(",")
               .map((s) => s.trim())
-              .filter((s) => s)
+              .filter(Boolean)
           : [],
       });
-
       if (response.success) {
         setCategories([...categories, response.data]);
         setCategoryForm({ name: "", subcategories: "" });
         setShowModal(false);
-        alert("Category created successfully!");
       } else {
         alert(response.message || "Failed to create category");
       }
     } catch (error) {
-      console.error("Error creating category:", error);
       alert("Failed to create category. Please try again.");
     }
   };
 
   const handleDeleteCategory = async (categoryId) => {
     const hasProducts = inventory.some(
-      (item) =>
-        item.category?._id === categoryId || item.category === categoryId
+      (item) => item.categoryId === categoryId,
     );
     if (hasProducts) {
       alert(
-        "Cannot delete category with existing products. Please reassign or delete products first."
+        "Cannot delete category with existing products. Please reassign or delete products first.",
       );
       return;
     }
-
-    if (window.confirm("Are you sure you want to delete this category?")) {
-      try {
-        const response = await api.deleteCategory(categoryId);
-        if (response.success) {
-          setCategories(categories.filter((cat) => cat._id !== categoryId));
-          alert("Category deleted successfully!");
-        } else {
-          alert(response.message || "Failed to delete category");
-        }
-      } catch (error) {
-        console.error("Error deleting category:", error);
-        alert("Failed to delete category. Please try again.");
+    if (!window.confirm("Are you sure you want to delete this category?"))
+      return;
+    try {
+      const response = await api.deleteCategory(categoryId);
+      if (response.success) {
+        setCategories(categories.filter((cat) => cat.id !== categoryId)); // ✅ cat.id
+      } else {
+        alert(response.message || "Failed to delete category");
       }
+    } catch (error) {
+      alert("Failed to delete category. Please try again.");
     }
   };
 
-  // Product Management
+  // ==================== PRODUCT ====================
   const handleAddProduct = async () => {
     if (
       !productForm.name ||
@@ -220,13 +203,12 @@ const InventoryManagement = () => {
       !productForm.quantity
     ) {
       alert(
-        "Please fill in all required fields (Name, Category, Price, Quantity)"
+        "Please fill in all required fields (Name, Category, Price, Quantity)",
       );
       return;
     }
-
     try {
-      const productData = {
+      const response = await api.createProduct({
         name: productForm.name.trim(),
         description: productForm.description.trim(),
         category: productForm.category,
@@ -236,29 +218,24 @@ const InventoryManagement = () => {
         quantity: parseInt(productForm.quantity) || 0,
         minQuantity: parseInt(productForm.minQuantity) || 5,
         sku: productForm.sku.trim() || `SKU-${Date.now()}`,
-      };
-
-      const response = await api.createProduct(productData);
-
+      });
       if (response.success) {
         setInventory([...inventory, response.data]);
         resetProductForm();
         setShowModal(false);
-        alert("Product added successfully!");
       } else {
         alert(response.message || "Failed to create product");
       }
     } catch (error) {
-      console.error("Error creating product:", error);
       alert("Failed to create product. Please try again.");
     }
   };
 
   const handleEditProduct = async () => {
     if (!selectedItem) return;
-
     try {
-      const productData = {
+      const response = await api.updateProduct(selectedItem.id, {
+        // ✅ selectedItem.id
         name: productForm.name.trim(),
         description: productForm.description.trim(),
         category: productForm.category,
@@ -267,54 +244,48 @@ const InventoryManagement = () => {
         costPrice: parseFloat(productForm.costPrice) || 0,
         minQuantity: parseInt(productForm.minQuantity) || 5,
         sku: productForm.sku.trim(),
-      };
-
-      const response = await api.updateProduct(selectedItem._id, productData);
-
+      });
       if (response.success) {
-        const updatedInventory = inventory.map((item) =>
-          item._id === selectedItem._id ? response.data : item
-        );
-        setInventory(updatedInventory);
+        setInventory(
+          inventory.map((item) =>
+            item.id === selectedItem.id ? response.data : item,
+          ),
+        ); // ✅ item.id
         resetProductForm();
         setSelectedItem(null);
         setShowModal(false);
-        alert("Product updated successfully!");
       } else {
         alert(response.message || "Failed to update product");
       }
     } catch (error) {
-      console.error("Error updating product:", error);
       alert("Failed to update product. Please try again.");
     }
   };
 
   const handleDeleteProduct = async (productId) => {
-    if (window.confirm("Are you sure you want to delete this product?")) {
-      try {
-        const response = await api.deleteProduct(productId);
-        if (response.success) {
-          setInventory(inventory.filter((item) => item._id !== productId));
-          alert("Product deleted successfully!");
-        } else {
-          alert(response.message || "Failed to delete product");
-        }
-      } catch (error) {
-        console.error("Error deleting product:", error);
-        alert("Failed to delete product. Please try again.");
+    if (!window.confirm("Are you sure you want to delete this product?"))
+      return;
+    try {
+      const response = await api.deleteProduct(productId);
+      if (response.success) {
+        setInventory(inventory.filter((item) => item.id !== productId)); // ✅ item.id
+      } else {
+        alert(response.message || "Failed to delete product");
       }
+    } catch (error) {
+      alert("Failed to delete product. Please try again.");
     }
   };
 
-  // Restock Management
+  // ==================== RESTOCK ====================
   const handleRestock = async () => {
     if (!selectedItem || !restockForm.quantityToAdd) {
       alert("Please enter quantity to add");
       return;
     }
-
     try {
-      const restockData = {
+      const response = await api.restockProduct(selectedItem.id, {
+        // ✅ selectedItem.id
         quantityToAdd: parseInt(restockForm.quantityToAdd) || 0,
         costPrice:
           parseFloat(restockForm.costPrice) || selectedItem.costPrice || 0,
@@ -322,31 +293,27 @@ const InventoryManagement = () => {
         notes: restockForm.notes.trim(),
         restockedBy: currentUser?.id || "unknown",
         restockedByName: currentUser?.fullName || "Unknown",
-      };
-
-      const response = await api.restockProduct(selectedItem._id, restockData);
-
+      });
       if (response.success) {
-        const updatedInventory = inventory.map((item) =>
-          item._id === selectedItem._id ? response.data.product : item
-        );
-        setInventory(updatedInventory);
+        setInventory(
+          inventory.map((item) =>
+            item.id === selectedItem.id ? response.data.product : item,
+          ),
+        ); // ✅
         setRestockHistory([response.data.restockRecord, ...restockHistory]);
         resetRestockForm();
         setSelectedItem(null);
         setShowModal(false);
-        alert("Product restocked successfully!");
       } else {
         alert(response.message || "Failed to restock product");
       }
     } catch (error) {
-      console.error("Error restocking product:", error);
       alert("Failed to restock product. Please try again.");
     }
   };
 
-  // Form Helpers
-  const resetProductForm = () => {
+  // ==================== FORM HELPERS ====================
+  const resetProductForm = () =>
     setProductForm({
       name: "",
       description: "",
@@ -358,16 +325,13 @@ const InventoryManagement = () => {
       minQuantity: "",
       sku: "",
     });
-  };
-
-  const resetRestockForm = () => {
+  const resetRestockForm = () =>
     setRestockForm({
       quantityToAdd: "",
       costPrice: "",
       supplier: "",
       notes: "",
     });
-  };
 
   const openAddProductModal = () => {
     resetProductForm();
@@ -377,11 +341,10 @@ const InventoryManagement = () => {
   };
 
   const openEditProductModal = (product) => {
-    const categoryId = product.category?._id || product.category;
     setProductForm({
       name: product.name || "",
       description: product.description || "",
-      category: categoryId || "",
+      category: product.categoryId || "", // ✅ Prisma uses categoryId
       subcategory: product.subcategory || "",
       price: (product.price || 0).toString(),
       costPrice: (product.costPrice || 0).toString(),
@@ -412,22 +375,20 @@ const InventoryManagement = () => {
     setShowModal(true);
   };
 
-  // Filtering
+  // ==================== FILTERING ====================
   const filteredInventory = inventory.filter((item) => {
     const matchesSearch =
       (item.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.sku || "").toLowerCase().includes(searchTerm.toLowerCase());
-    const categoryId = item.category?._id || item.category;
     const matchesCategory =
-      filterCategory === "all" || categoryId === filterCategory;
+      filterCategory === "all" || item.categoryId === filterCategory; // ✅
     const matchesLowStock =
       !lowStockOnly || (item.quantity || 0) <= (item.minQuantity || 5);
-
     return matchesSearch && matchesCategory && matchesLowStock;
   });
 
   const lowStockItems = inventory.filter(
-    (item) => (item.quantity || 0) <= (item.minQuantity || 5)
+    (item) => (item.quantity || 0) <= (item.minQuantity || 5),
   );
 
   if (loading) {
@@ -457,13 +418,11 @@ const InventoryManagement = () => {
                 Manage products, categories, and stock levels
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm text-slate-500">Logged in as</p>
-                <p className="font-semibold text-slate-900">
-                  {currentUser?.fullName}
-                </p>
-              </div>
+            <div className="text-right">
+              <p className="text-sm text-slate-500">Logged in as</p>
+              <p className="font-semibold text-slate-900">
+                {currentUser?.fullName}
+              </p>
             </div>
           </div>
         </div>
@@ -474,9 +433,7 @@ const InventoryManagement = () => {
         {lowStockItems.length > 0 && (
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-5 mb-6 shadow-sm">
             <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <AlertCircle className="text-amber-600" size={28} />
-              </div>
+              <AlertCircle className="text-amber-600 flex-shrink-0" size={28} />
               <div className="ml-4 flex-1">
                 <h3 className="font-bold text-amber-900 text-lg">
                   Low Stock Alert
@@ -496,67 +453,58 @@ const InventoryManagement = () => {
           </div>
         )}
 
-        {/* Tabs */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="border-b border-slate-200 bg-slate-50">
-            <div className="flex">
+          {/* Tabs */}
+          <div className="border-b border-slate-200 bg-slate-50 flex">
+            {[
+              {
+                key: "products",
+                label: `Products (${inventory.length})`,
+                icon: <Box size={20} />,
+              },
+              {
+                key: "categories",
+                label: `Categories (${categories.length})`,
+                icon: <Layers size={20} />,
+              },
+              {
+                key: "restock",
+                label: "Restock History",
+                icon: <History size={20} />,
+              },
+            ].map((tab) => (
               <button
-                onClick={() => setActiveTab("products")}
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
                 className={`px-6 py-4 font-semibold transition flex items-center gap-2 ${
-                  activeTab === "products"
+                  activeTab === tab.key
                     ? "bg-white text-indigo-600 border-b-2 border-indigo-600"
                     : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                 }`}
               >
-                <Box size={20} />
-                Products ({inventory.length})
+                {tab.icon}
+                {tab.label}
               </button>
-              <button
-                onClick={() => setActiveTab("categories")}
-                className={`px-6 py-4 font-semibold transition flex items-center gap-2 ${
-                  activeTab === "categories"
-                    ? "bg-white text-indigo-600 border-b-2 border-indigo-600"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                }`}
-              >
-                <Layers size={20} />
-                Categories ({categories.length})
-              </button>
-              <button
-                onClick={() => setActiveTab("restock")}
-                className={`px-6 py-4 font-semibold transition flex items-center gap-2 ${
-                  activeTab === "restock"
-                    ? "bg-white text-indigo-600 border-b-2 border-indigo-600"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                }`}
-              >
-                <History size={20} />
-                Restock History
-              </button>
-            </div>
+            ))}
           </div>
 
           {/* Products Tab */}
           {activeTab === "products" && (
             <div className="p-6">
-              {/* Search and Filters */}
               <div className="mb-6 flex flex-wrap gap-3">
-                <div className="flex-1 min-w-64">
-                  <div className="relative">
-                    <Search
-                      className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"
-                      size={20}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Search products by name or SKU..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
-                    />
-                  </div>
+                <div className="flex-1 min-w-64 relative">
+                  <Search
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={20}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Search products by name or SKU..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
+                  />
                 </div>
-
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
@@ -564,98 +512,82 @@ const InventoryManagement = () => {
                 >
                   <option value="all">All Categories</option>
                   {categories.map((cat) => (
-                    <option key={cat._id} value={cat._id}>
+                    <option key={cat.id} value={cat.id}>
                       {cat.name}
-                    </option>
+                    </option> // ✅ cat.id
                   ))}
                 </select>
-
                 <button
                   onClick={() => setLowStockOnly(!lowStockOnly)}
-                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 font-medium transition ${
+                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 font-medium transition border-2 ${
                     lowStockOnly
-                      ? "bg-amber-100 text-amber-800 border-2 border-amber-400 shadow-sm"
-                      : "bg-slate-100 text-slate-700 border-2 border-slate-300 hover:bg-slate-200"
+                      ? "bg-amber-100 text-amber-800 border-amber-400"
+                      : "bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200"
                   }`}
                 >
-                  <TrendingDown size={18} />
-                  Low Stock Only
+                  <TrendingDown size={18} /> Low Stock Only
                 </button>
-
                 <button
                   onClick={openAddProductModal}
                   className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2 font-semibold shadow-sm"
                 >
-                  <Plus size={20} />
-                  Add Product
+                  <Plus size={20} /> Add Product
                 </button>
               </div>
 
-              {/* Products Table */}
               <div className="overflow-x-auto rounded-lg border border-slate-200">
                 <table className="w-full">
                   <thead className="bg-slate-100">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        SKU
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Product
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Category
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Price
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Cost
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Stock
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Actions
-                      </th>
+                      {[
+                        "SKU",
+                        "Product",
+                        "Category",
+                        "Price",
+                        "Cost",
+                        "Stock",
+                        "Actions",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className={`px-4 py-3 text-xs font-bold text-slate-700 uppercase tracking-wider ${h === "Actions" || h === "Price" || h === "Cost" || h === "Stock" ? "text-right" : "text-left"}`}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
                     {filteredInventory.map((product) => {
-                      const quantity = product.quantity || 0;
-                      const minQuantity = product.minQuantity || 5;
-                      const isLowStock = quantity <= minQuantity;
-                      const categoryName =
-                        product.category?.name ||
-                        product.categoryName ||
-                        "Uncategorized";
-
+                      const isLowStock =
+                        (product.quantity || 0) <= (product.minQuantity || 5);
                       return (
                         <tr
-                          key={product._id}
+                          key={product.id}
                           className={
                             isLowStock
                               ? "bg-amber-50"
                               : "hover:bg-slate-50 transition"
                           }
                         >
+                          {" "}
+                          // ✅ product.id
                           <td className="px-4 py-4 text-sm font-mono text-slate-600">
                             {product.sku || "N/A"}
                           </td>
                           <td className="px-4 py-4">
-                            <div>
-                              <div className="font-semibold text-slate-900">
-                                {product.name || "Unnamed Product"}
-                              </div>
-                              {product.description && (
-                                <div className="text-sm text-slate-500 mt-0.5">
-                                  {product.description}
-                                </div>
-                              )}
+                            <div className="font-semibold text-slate-900">
+                              {product.name}
                             </div>
+                            {product.description && (
+                              <div className="text-sm text-slate-500 mt-0.5">
+                                {product.description}
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-4 text-sm">
                             <div className="font-medium text-slate-900">
-                              {categoryName}
+                              {product.categoryName || "Uncategorized"}
                             </div>
                             {product.subcategory && (
                               <div className="text-xs text-slate-500 mt-0.5">
@@ -671,17 +603,13 @@ const InventoryManagement = () => {
                           </td>
                           <td className="px-4 py-4 text-right">
                             <span
-                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                                isLowStock
-                                  ? "bg-red-100 text-red-800"
-                                  : "bg-emerald-100 text-emerald-800"
-                              }`}
+                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${isLowStock ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800"}`}
                             >
-                              {quantity} units
+                              {product.quantity} units
                             </span>
                             {isLowStock && (
                               <div className="text-xs text-red-600 mt-1 font-medium">
-                                Min: {minQuantity}
+                                Min: {product.minQuantity}
                               </div>
                             )}
                           </td>
@@ -702,12 +630,13 @@ const InventoryManagement = () => {
                                 <Edit2 size={18} />
                               </button>
                               <button
-                                onClick={() => handleDeleteProduct(product._id)}
+                                onClick={() => handleDeleteProduct(product.id)}
                                 className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
                                 title="Delete"
                               >
                                 <Trash2 size={18} />
-                              </button>
+                              </button>{" "}
+                              // ✅ product.id
                             </div>
                           </td>
                         </tr>
@@ -738,26 +667,23 @@ const InventoryManagement = () => {
                   onClick={openAddCategoryModal}
                   className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2 font-semibold shadow-sm"
                 >
-                  <Plus size={20} />
-                  Add Category
+                  <Plus size={20} /> Add Category
                 </button>
               </div>
-
               <div className="grid gap-6">
                 {categories.map((category) => {
-                  const categoryProducts = inventory.filter((p) => {
-                    const productCategoryId = p.category?._id || p.category;
-                    return productCategoryId === category._id;
-                  });
-                  const hasSubcategories =
-                    category.subcategories && category.subcategories.length > 0;
+                  const subcategories = getSubcategories(category); // ✅ normalized
+                  const categoryProducts = inventory.filter(
+                    (p) => p.categoryId === category.id,
+                  ); // ✅
 
                   return (
                     <div
-                      key={category._id}
+                      key={category.id}
                       className="border-2 border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm hover:shadow-md transition"
                     >
-                      {/* Category Header */}
+                      {" "}
+                      // ✅ category.id
                       <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-5">
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
@@ -766,37 +692,36 @@ const InventoryManagement = () => {
                               <h3 className="font-bold text-2xl text-white">
                                 {category.name}
                               </h3>
-                              <span className="px-3 py-1 bg-white/20 text-white text-xs font-bold rounded-full backdrop-blur">
+                              <span className="px-3 py-1 bg-white/20 text-white text-xs font-bold rounded-full">
                                 {categoryProducts.length} products
                               </span>
                             </div>
                             <p className="text-indigo-100 text-sm mt-2">
                               Created:{" "}
                               {new Date(
-                                category.createdAt
+                                category.createdAt,
                               ).toLocaleDateString()}
                             </p>
                           </div>
                           <button
-                            onClick={() => handleDeleteCategory(category._id)}
+                            onClick={() => handleDeleteCategory(category.id)}
                             className="p-2 text-white hover:bg-white/20 rounded-lg transition"
-                            title="Delete Category"
                           >
+                            {" "}
+                            // ✅ category.id
                             <Trash2 size={20} />
                           </button>
                         </div>
                       </div>
-
-                      {/* Subcategories */}
-                      {hasSubcategories && (
+                      {subcategories.length > 0 && (
                         <div className="p-5 bg-slate-50 border-b border-slate-200">
                           <h4 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
-                            Subcategories ({category.subcategories.length})
+                            Subcategories ({subcategories.length})
                           </h4>
                           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                            {category.subcategories.map((sub, idx) => {
+                            {subcategories.map((sub, idx) => {
                               const subProducts = categoryProducts.filter(
-                                (p) => p.subcategory === sub
+                                (p) => p.subcategory === sub,
                               );
                               return (
                                 <div
@@ -815,8 +740,6 @@ const InventoryManagement = () => {
                           </div>
                         </div>
                       )}
-
-                      {/* Products in Category */}
                       {categoryProducts.length > 0 && (
                         <div className="p-5">
                           <h4 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
@@ -829,13 +752,11 @@ const InventoryManagement = () => {
                                 (product.minQuantity || 5);
                               return (
                                 <div
-                                  key={product._id}
-                                  className={`flex items-center justify-between p-4 rounded-lg border-2 ${
-                                    isLowStock
-                                      ? "bg-amber-50 border-amber-200"
-                                      : "bg-slate-50 border-slate-200"
-                                  }`}
+                                  key={product.id}
+                                  className={`flex items-center justify-between p-4 rounded-lg border-2 ${isLowStock ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-200"}`}
                                 >
+                                  {" "}
+                                  // ✅ product.id
                                   <div className="flex-1">
                                     <div className="flex items-center gap-2">
                                       <h5 className="font-semibold text-slate-900">
@@ -859,15 +780,13 @@ const InventoryManagement = () => {
                                       )}
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-4">
-                                    <div className="text-right">
-                                      <div className="font-bold text-slate-900">
-                                        KES{" "}
-                                        {(product.price || 0).toLocaleString()}
-                                      </div>
-                                      <div className="text-sm text-slate-600">
-                                        Stock: {product.quantity || 0}
-                                      </div>
+                                  <div className="text-right">
+                                    <div className="font-bold text-slate-900">
+                                      KES{" "}
+                                      {(product.price || 0).toLocaleString()}
+                                    </div>
+                                    <div className="text-sm text-slate-600">
+                                      Stock: {product.quantity || 0}
                                     </div>
                                   </div>
                                 </div>
@@ -879,7 +798,6 @@ const InventoryManagement = () => {
                     </div>
                   );
                 })}
-
                 {categories.length === 0 && (
                   <div className="text-center py-16 bg-white border-2 border-slate-200 rounded-xl">
                     <Layers className="mx-auto text-slate-300 mb-4" size={64} />
@@ -902,32 +820,29 @@ const InventoryManagement = () => {
                 <table className="w-full">
                   <thead className="bg-slate-100">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Product
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Quantity
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Cost Price
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Supplier
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Restocked By
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Notes
-                      </th>
+                      {[
+                        "Date",
+                        "Product",
+                        "Quantity",
+                        "Cost Price",
+                        "Supplier",
+                        "Restocked By",
+                        "Notes",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className={`px-4 py-3 text-xs font-bold text-slate-700 uppercase tracking-wider ${h === "Quantity" || h === "Cost Price" ? "text-right" : "text-left"}`}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
                     {restockHistory.map((record) => (
-                      <tr key={record._id} className="hover:bg-slate-50">
+                      <tr key={record.id} className="hover:bg-slate-50">
+                        {" "}
+                        // ✅ record.id
                         <td className="px-4 py-4 text-sm text-slate-600">
                           {new Date(record.date).toLocaleDateString()}{" "}
                           {new Date(record.date).toLocaleTimeString()}
@@ -939,7 +854,7 @@ const InventoryManagement = () => {
                               "Unknown"}
                           </div>
                           <div className="text-sm text-slate-500 font-mono">
-                            {record.product?.sku || record.productSku || "N/A"}
+                            {record.product?.sku || "N/A"}
                           </div>
                         </td>
                         <td className="px-4 py-4 text-right">
@@ -987,7 +902,6 @@ const InventoryManagement = () => {
       {showModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
             <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-5 flex justify-between items-center">
               <h2 className="text-2xl font-bold text-white">
                 {modalType === "addProduct" && "Add New Product"}
@@ -1003,7 +917,6 @@ const InventoryManagement = () => {
               </button>
             </div>
 
-            {/* Modal Body */}
             <div className="p-6">
               {/* Add/Edit Product Form */}
               {(modalType === "addProduct" || modalType === "editProduct") && (
@@ -1018,11 +931,10 @@ const InventoryManagement = () => {
                       onChange={(e) =>
                         setProductForm({ ...productForm, name: e.target.value })
                       }
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                       placeholder="Enter product name"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">
                       Description
@@ -1036,11 +948,10 @@ const InventoryManagement = () => {
                         })
                       }
                       rows={3}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                       placeholder="Enter product description"
                     />
                   </div>
-
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-2">
@@ -1055,17 +966,16 @@ const InventoryManagement = () => {
                             subcategory: "",
                           })
                         }
-                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900 font-medium"
+                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900 font-medium"
                       >
                         <option value="">Select Category</option>
                         {categories.map((cat) => (
-                          <option key={cat._id} value={cat._id}>
+                          <option key={cat.id} value={cat.id}>
                             {cat.name}
-                          </option>
+                          </option> // ✅ cat.id
                         ))}
                       </select>
                     </div>
-
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-2">
                         Subcategory
@@ -1079,21 +989,27 @@ const InventoryManagement = () => {
                           })
                         }
                         disabled={!productForm.category}
-                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900 font-medium disabled:bg-slate-100 disabled:text-slate-500"
+                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900 font-medium disabled:bg-slate-100 disabled:text-slate-500"
                       >
                         <option value="">Select Subcategory</option>
                         {productForm.category &&
-                          categories
-                            .find((c) => c._id === productForm.category)
-                            ?.subcategories?.map((sub, idx) => (
+                          getSubcategories(
+                            categories.find(
+                              (c) => c.id === productForm.category,
+                            ),
+                          ).map(
+                            (
+                              sub,
+                              idx, // ✅ c.id + getSubcategories
+                            ) => (
                               <option key={idx} value={sub}>
                                 {sub}
                               </option>
-                            ))}
+                            ),
+                          )}
                       </select>
                     </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-2">
@@ -1108,12 +1024,11 @@ const InventoryManagement = () => {
                             price: e.target.value,
                           })
                         }
-                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                         placeholder="0.00"
                         step="0.01"
                       />
                     </div>
-
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-2">
                         Cost Price (KES)
@@ -1127,13 +1042,12 @@ const InventoryManagement = () => {
                             costPrice: e.target.value,
                           })
                         }
-                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                         placeholder="0.00"
                         step="0.01"
                       />
                     </div>
                   </div>
-
                   {modalType === "addProduct" && (
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -1149,11 +1063,10 @@ const InventoryManagement = () => {
                               quantity: e.target.value,
                             })
                           }
-                          className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                          className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                           placeholder="0"
                         />
                       </div>
-
                       <div>
                         <label className="block text-sm font-bold text-slate-700 mb-2">
                           Minimum Quantity
@@ -1167,13 +1080,12 @@ const InventoryManagement = () => {
                               minQuantity: e.target.value,
                             })
                           }
-                          className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                          className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                           placeholder="5"
                         />
                       </div>
                     </div>
                   )}
-
                   {modalType === "editProduct" && (
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-2">
@@ -1188,12 +1100,11 @@ const InventoryManagement = () => {
                             minQuantity: e.target.value,
                           })
                         }
-                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                        className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                         placeholder="5"
                       />
                     </div>
                   )}
-
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">
                       SKU
@@ -1204,11 +1115,10 @@ const InventoryManagement = () => {
                       onChange={(e) =>
                         setProductForm({ ...productForm, sku: e.target.value })
                       }
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900 font-mono"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900 font-mono"
                       placeholder="Auto-generated if empty"
                     />
                   </div>
-
                   <div className="flex gap-3 pt-4">
                     <button
                       onClick={() => setShowModal(false)}
@@ -1256,7 +1166,6 @@ const InventoryManagement = () => {
                       </div>
                     </div>
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">
                       Quantity to Add *
@@ -1270,11 +1179,10 @@ const InventoryManagement = () => {
                           quantityToAdd: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                       placeholder="Enter quantity"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">
                       Cost Price (KES)
@@ -1288,12 +1196,11 @@ const InventoryManagement = () => {
                           costPrice: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                       placeholder="0.00"
                       step="0.01"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">
                       Supplier
@@ -1307,11 +1214,10 @@ const InventoryManagement = () => {
                           supplier: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                       placeholder="Enter supplier name"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">
                       Notes
@@ -1325,11 +1231,10 @@ const InventoryManagement = () => {
                         })
                       }
                       rows={3}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                       placeholder="Enter any additional notes"
                     />
                   </div>
-
                   {restockForm.quantityToAdd && (
                     <div className="bg-emerald-50 border-2 border-emerald-200 rounded-lg p-4">
                       <div className="flex items-center gap-2 text-emerald-900 mb-2">
@@ -1343,7 +1248,6 @@ const InventoryManagement = () => {
                       </p>
                     </div>
                   )}
-
                   <div className="flex gap-3 pt-4">
                     <button
                       onClick={() => setShowModal(false)}
@@ -1377,11 +1281,10 @@ const InventoryManagement = () => {
                           name: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                       placeholder="Enter category name"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">
                       Subcategories (comma-separated)
@@ -1395,14 +1298,13 @@ const InventoryManagement = () => {
                         })
                       }
                       rows={3}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900"
                       placeholder="e.g., Small, Medium, Large"
                     />
                     <p className="text-xs text-slate-500 mt-2">
                       Separate multiple subcategories with commas
                     </p>
                   </div>
-
                   <div className="flex gap-3 pt-4">
                     <button
                       onClick={() => setShowModal(false)}

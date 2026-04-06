@@ -7,6 +7,7 @@ const prisma = require("../prisma");
 const inventoryRoutes = require("./routes/inventory");
 const salesRoutes = require("./routes/sales");
 const reportRoutes = require("./routes/reports");
+const creditRoutes = require("./routes/credits");
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/sales", salesRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/credits", creditRoutes);
 
 app.get("/", (req, res) => {
   res.json({

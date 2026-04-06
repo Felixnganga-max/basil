@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Search,
   DollarSign,
@@ -7,69 +7,135 @@ import {
   Package,
   CreditCard,
   X,
-  Check,
   Eye,
   Phone,
   FileText,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 
+// ── API ──────────────────────────────────────────────────────────────────────
+const API_BASE_URL = "http://localhost:5000/api";
+
+const api = {
+  getCredits: (query = "") =>
+    fetch(`${API_BASE_URL}/credits${query}`).then((r) => r.json()),
+
+  getCreditStats: () =>
+    fetch(`${API_BASE_URL}/credits/stats`).then((r) => r.json()),
+
+  recordPayment: (creditId, data) =>
+    fetch(`${API_BASE_URL}/credits/${creditId}/payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).then((r) => r.json()),
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const formatDate = (ds) =>
+  new Date(ds).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+const formatDateTime = (ds) =>
+  new Date(ds).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+const STATUS_META = {
+  ACTIVE: { label: "Active", color: "text-red-400 bg-red-950 border-red-800" },
+  PARTIAL: {
+    label: "Partial Payment",
+    color: "text-yellow-400 bg-yellow-950 border-yellow-800",
+  },
+  PAID: {
+    label: "Cleared",
+    color: "text-green-400 bg-green-950 border-green-800",
+  },
+  CANCELLED: {
+    label: "Cancelled",
+    color: "text-zinc-400 bg-zinc-900 border-zinc-700",
+  },
+};
+
+const statusMeta = (status) =>
+  STATUS_META[status?.toUpperCase()] ?? STATUS_META.ACTIVE;
+
+const pct = (paid, total) =>
+  total > 0 ? ((paid / total) * 100).toFixed(1) : "0.0";
+
+// ── Component ─────────────────────────────────────────────────────────────────
 const Credits = () => {
   const [credits, setCredits] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // Modals
   const [selectedCredit, setSelectedCredit] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  // Payment form states
+  // Payment form
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentMethod, setPaymentMethod] = useState("cash"); // "cash" | "mpesa" — matches CashOrMpesa enum
   const [paymentNotes, setPaymentNotes] = useState("");
+  const [paymentLoading, setPaymentLoading] = useState(false);
 
-  useEffect(() => {
-    loadCredits();
+  // Adapt to your auth system
+  const currentUser = { id: "user_default", fullName: "Admin User" };
+
+  // ── Data loading ─────────────────────────────────────────────────────────
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [creditsRes, statsRes] = await Promise.all([
+        api.getCredits(),
+        api.getCreditStats(),
+      ]);
+      if (!creditsRes.success) throw new Error(creditsRes.message);
+      if (!statsRes.success) throw new Error(statsRes.message);
+      setCredits(creditsRes.data);
+      setStats(statsRes.data);
+    } catch (err) {
+      setError(
+        err.message ||
+          "Failed to load credits. Check that the backend is running on http://localhost:5000",
+      );
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const loadCredits = async () => {
-    try {
-      const result = await window.storage.get("credits");
-      const loadedCredits = result ? JSON.parse(result.value) : [];
-      // Sort by date (newest first)
-      loadedCredits.sort(
-        (a, b) => new Date(b.creditDate) - new Date(a.creditDate)
-      );
-      setCredits(loadedCredits);
-    } catch (error) {
-      console.log("Loading initial credits");
-      setCredits([]);
-    }
-    setLoading(false);
-  };
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
-  // Filter credits
-  const filteredCredits = credits.filter((credit) => {
+  // ── Filtering ─────────────────────────────────────────────────────────────
+  const filteredCredits = credits.filter((c) => {
+    const term = searchTerm.toLowerCase();
     const matchesSearch =
-      credit.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (credit.customerPhone && credit.customerPhone.includes(searchTerm));
-
+      c.customerName?.toLowerCase().includes(term) ||
+      c.customerPhone?.includes(term);
     const matchesStatus =
-      statusFilter === "all" || credit.status === statusFilter;
-
+      statusFilter === "all" ||
+      c.status?.toUpperCase() === statusFilter.toUpperCase();
     return matchesSearch && matchesStatus;
   });
 
-  // Calculate total outstanding debt
-  const totalOutstanding = credits
-    .filter((c) => c.status !== "cleared")
-    .reduce((sum, c) => sum + c.remainingBalance, 0);
-
-  // Calculate statistics
-  const activeCredits = credits.filter((c) => c.status === "active").length;
-  const partialCredits = credits.filter((c) => c.status === "partial").length;
-  const clearedCredits = credits.filter((c) => c.status === "cleared").length;
-
-  // Open payment modal
+  // ── Payment modal ─────────────────────────────────────────────────────────
   const openPaymentModal = (credit) => {
     setSelectedCredit(credit);
     setPaymentAmount("");
@@ -78,213 +144,151 @@ const Credits = () => {
     setShowPaymentModal(true);
   };
 
-  // Open details modal
-  const openDetailsModal = (credit) => {
-    setSelectedCredit(credit);
-    setShowDetailsModal(true);
-  };
-
-  // Process payment
   const processPayment = async () => {
-    if (!selectedCredit) return;
-
     const amount = parseFloat(paymentAmount);
-
     if (!amount || amount <= 0) {
       alert("Please enter a valid payment amount");
       return;
     }
-
     if (amount > selectedCredit.remainingBalance) {
       alert("Payment amount cannot exceed remaining balance");
       return;
     }
 
-    const currentUser = await window.storage.get("current_user");
-    if (!currentUser) {
-      alert("No user logged in");
-      return;
-    }
-
-    const user = JSON.parse(currentUser.value);
-
-    // Create payment record
-    const payment = {
-      paymentId: `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      date: new Date().toISOString(),
-      amount: amount,
-      paymentMethod: paymentMethod,
-      receivedBy: user.id,
-      receivedByName: user.fullName,
-      notes: paymentNotes,
-    };
-
-    // Update credit record
-    const newAmountPaid = selectedCredit.amountPaid + amount;
-    const newRemainingBalance = selectedCredit.remainingBalance - amount;
-    const newStatus = newRemainingBalance === 0 ? "cleared" : "partial";
-
-    const updatedCredit = {
-      ...selectedCredit,
-      amountPaid: newAmountPaid,
-      remainingBalance: newRemainingBalance,
-      payments: [...selectedCredit.payments, payment],
-      status: newStatus,
-      updatedAt: new Date().toISOString(),
-    };
-
-    // Update credits in storage
+    setPaymentLoading(true);
     try {
-      const updatedCredits = credits.map((c) =>
-        c.id === selectedCredit.id ? updatedCredit : c
-      );
-
-      await window.storage.set("credits", JSON.stringify(updatedCredits));
-      setCredits(updatedCredits);
-
-      alert(`Payment of KSh ${amount.toLocaleString()} recorded successfully!`);
+      const res = await api.recordPayment(selectedCredit.id, {
+        amount,
+        paymentMethod, // "cash" or "mpesa" — matches enum
+        receivedBy: currentUser.id,
+        receivedByName: currentUser.fullName,
+        notes: paymentNotes,
+      });
+      if (!res.success) throw new Error(res.message);
+      alert(res.message);
       setShowPaymentModal(false);
       setSelectedCredit(null);
-    } catch (error) {
-      console.error("Error processing payment:", error);
-      alert("Error processing payment. Please try again.");
+      await loadData();
+    } catch (err) {
+      alert(`Error recording payment: ${err.message}`);
+    } finally {
+      setPaymentLoading(false);
     }
   };
 
-  // Format date
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  // Format time
-  const formatDateTime = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  // Get status color
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "active":
-        return "text-red-500 bg-red-900 bg-opacity-30 border-red-700";
-      case "partial":
-        return "text-yellow-500 bg-yellow-900 bg-opacity-30 border-yellow-700";
-      case "cleared":
-        return "text-green-500 bg-green-900 bg-opacity-30 border-green-700";
-      default:
-        return "text-zinc-500 bg-zinc-900 bg-opacity-30 border-zinc-700";
-    }
-  };
-
-  // Get status text
-  const getStatusText = (status) => {
-    switch (status) {
-      case "active":
-        return "Active";
-      case "partial":
-        return "Partial Payment";
-      case "cleared":
-        return "Cleared";
-      default:
-        return status;
-    }
-  };
-
+  // ── Loading / error states ────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-xl text-white">Loading...</div>
+      <div className="flex items-center justify-center h-full bg-black">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-red-500 mx-auto mb-4" />
+          <div className="text-xl text-white">Loading credits...</div>
+        </div>
       </div>
     );
   }
 
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full bg-black p-6">
+        <div className="text-center max-w-md">
+          <AlertCircle className="mx-auto mb-4 text-red-500" size={48} />
+          <p className="text-white mb-2 font-semibold">
+            Failed to load credits
+          </p>
+          <p className="text-zinc-400 text-sm mb-6">{error}</p>
+          <button
+            onClick={loadData}
+            className="flex items-center gap-2 mx-auto bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded font-semibold"
+          >
+            <RefreshCw size={16} /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main UI ───────────────────────────────────────────────────────────────
   return (
     <div className="h-full bg-black text-white p-6 overflow-y-auto">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6 text-red-500">
-          Credit Management
-        </h1>
-
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-zinc-900 p-4 rounded-lg border border-zinc-800">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-zinc-400">Total Outstanding</span>
-              <DollarSign className="text-red-500" size={20} />
-            </div>
-            <div className="text-2xl font-bold text-red-500">
-              KSh {totalOutstanding.toLocaleString()}
-            </div>
-          </div>
-
-          <div className="bg-zinc-900 p-4 rounded-lg border border-zinc-800">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-zinc-400">Active Credits</span>
-              <CreditCard className="text-red-500" size={20} />
-            </div>
-            <div className="text-2xl font-bold text-white">{activeCredits}</div>
-          </div>
-
-          <div className="bg-zinc-900 p-4 rounded-lg border border-zinc-800">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-zinc-400">Partial Payments</span>
-              <CreditCard className="text-yellow-500" size={20} />
-            </div>
-            <div className="text-2xl font-bold text-white">
-              {partialCredits}
-            </div>
-          </div>
-
-          <div className="bg-zinc-900 p-4 rounded-lg border border-zinc-800">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-zinc-400">Cleared</span>
-              <Check className="text-green-500" size={20} />
-            </div>
-            <div className="text-2xl font-bold text-white">
-              {clearedCredits}
-            </div>
-          </div>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold text-red-500">Credit Management</h1>
+          <button
+            onClick={loadData}
+            className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded text-sm"
+          >
+            <RefreshCw size={16} /> Refresh
+          </button>
         </div>
 
-        {/* Search and Filter */}
+        {/* Stats */}
+        {stats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-zinc-900 p-4 rounded-lg border border-zinc-800">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-zinc-400">Total Outstanding</span>
+                <DollarSign className="text-red-500" size={18} />
+              </div>
+              <div className="text-2xl font-bold text-red-500">
+                KSh {(stats.totalOutstanding || 0).toLocaleString()}
+              </div>
+            </div>
+
+            {stats.byStatus?.map((s) => {
+              const meta = statusMeta(s.status);
+              const iconColor =
+                s.status === "PAID"
+                  ? "text-green-500"
+                  : s.status === "PARTIAL"
+                    ? "text-yellow-500"
+                    : "text-red-500";
+              return (
+                <div
+                  key={s.status}
+                  className="bg-zinc-900 p-4 rounded-lg border border-zinc-800"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-zinc-400">{meta.label}</span>
+                    <CreditCard className={iconColor} size={18} />
+                  </div>
+                  <div className="text-2xl font-bold text-white">{s.count}</div>
+                  <div className="text-xs text-zinc-500 mt-1">
+                    KSh {(s.outstanding || 0).toLocaleString()} remaining
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Filters */}
         <div className="bg-zinc-900 p-4 rounded-lg border border-zinc-800 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Search */}
             <div className="relative">
               <Search
                 className="absolute left-3 top-3 text-zinc-400"
-                size={20}
+                size={18}
               />
               <input
                 type="text"
                 placeholder="Search by customer name or phone..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-black border border-zinc-700 rounded text-white focus:outline-none focus:border-red-500"
+                className="w-full pl-10 pr-4 py-2 bg-black border border-zinc-700 rounded text-white focus:outline-none focus:border-red-500 text-sm"
               />
             </div>
-
-            {/* Status Filter */}
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 bg-black border border-zinc-700 rounded text-white focus:outline-none focus:border-red-500"
+              className="px-4 py-2 bg-black border border-zinc-700 rounded text-white focus:outline-none focus:border-red-500 text-sm"
             >
               <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="partial">Partial Payment</option>
-              <option value="cleared">Cleared</option>
+              <option value="ACTIVE">Active</option>
+              <option value="PARTIAL">Partial Payment</option>
+              <option value="PAID">Cleared</option>
+              <option value="CANCELLED">Cancelled</option>
             </select>
           </div>
         </div>
@@ -292,147 +296,153 @@ const Credits = () => {
         {/* Credits List */}
         <div className="bg-zinc-900 rounded-lg border border-zinc-800">
           {filteredCredits.length === 0 ? (
-            <div className="text-center text-zinc-400 py-12">
-              <CreditCard size={48} className="mx-auto mb-4 opacity-50" />
-              <p>No credits found</p>
+            <div className="text-center text-zinc-400 py-16">
+              <CreditCard size={48} className="mx-auto mb-4 opacity-40" />
+              <p className="font-semibold mb-1">No credits found</p>
+              <p className="text-sm text-zinc-500">
+                Credit sales will appear here automatically when processed.
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-zinc-800">
-              {filteredCredits.map((credit) => (
-                <div
-                  key={credit.id}
-                  className="p-4 hover:bg-zinc-800 transition"
-                >
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    {/* Customer Info */}
-                    <div className="flex-1">
-                      <div className="flex items-start gap-3">
-                        <div className="bg-zinc-800 p-2 rounded">
-                          <User className="text-red-500" size={20} />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-lg text-white mb-1">
-                            {credit.customerName}
-                          </h3>
-                          {credit.customerPhone && (
-                            <div className="flex items-center gap-2 text-sm text-zinc-400 mb-2">
-                              <Phone size={14} />
-                              {credit.customerPhone}
+              {filteredCredits.map((credit) => {
+                const meta = statusMeta(credit.status);
+                const isCleared =
+                  credit.status === "PAID" || credit.status === "CANCELLED";
+
+                return (
+                  <div
+                    key={credit.id}
+                    className="p-4 hover:bg-zinc-800/50 transition"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      {/* Customer */}
+                      <div className="flex-1">
+                        <div className="flex items-start gap-3">
+                          <div className="bg-zinc-800 p-2 rounded mt-0.5">
+                            <User className="text-red-500" size={18} />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-white">
+                              {credit.customerName}
+                            </h3>
+                            {credit.customerPhone && (
+                              <div className="flex items-center gap-1.5 text-xs text-zinc-400 mt-1">
+                                <Phone size={12} /> {credit.customerPhone}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 text-xs text-zinc-500 mt-1">
+                              <Calendar size={12} />
+                              {/* schema uses creditDate */}
+                              {formatDate(credit.creditDate)}
                             </div>
-                          )}
-                          <div className="flex items-center gap-2 text-sm text-zinc-400">
-                            <Calendar size={14} />
-                            Credit Date: {formatDate(credit.creditDate)}
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Amount Info */}
-                    <div className="flex-1">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <div className="text-zinc-400 mb-1">Total Amount</div>
-                          <div className="font-semibold text-white">
-                            KSh {credit.totalAmount.toLocaleString()}
+                      {/* Amounts */}
+                      <div className="flex-1">
+                        <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                          <div>
+                            <div className="text-zinc-400 text-xs mb-0.5">
+                              Total
+                            </div>
+                            <div className="font-semibold text-white">
+                              KSh {credit.totalAmount.toLocaleString()}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-zinc-400 text-xs mb-0.5">
+                              Paid
+                            </div>
+                            <div className="font-semibold text-green-400">
+                              KSh {credit.amountPaid.toLocaleString()}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-zinc-400 text-xs mb-0.5">
+                              Remaining
+                            </div>
+                            <div className="font-semibold text-red-400">
+                              KSh {credit.remainingBalance.toLocaleString()}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-zinc-400 text-xs mb-0.5">
+                              Status
+                            </div>
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded text-xs font-semibold border ${meta.color}`}
+                            >
+                              {meta.label}
+                            </span>
                           </div>
                         </div>
-                        <div>
-                          <div className="text-zinc-400 mb-1">Amount Paid</div>
-                          <div className="font-semibold text-green-500">
-                            KSh {credit.amountPaid.toLocaleString()}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-zinc-400 mb-1">Remaining</div>
-                          <div className="font-semibold text-red-500">
-                            KSh {credit.remainingBalance.toLocaleString()}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-zinc-400 mb-1">Status</div>
-                          <span
-                            className={`inline-block px-2 py-1 rounded text-xs font-semibold border ${getStatusColor(
-                              credit.status
-                            )}`}
-                          >
-                            {getStatusText(credit.status)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="mt-3">
-                        <div className="w-full bg-zinc-800 rounded-full h-2">
+                        <div className="w-full bg-zinc-800 rounded-full h-1.5">
                           <div
-                            className="bg-green-500 h-2 rounded-full transition-all"
+                            className="bg-green-500 h-1.5 rounded-full transition-all"
                             style={{
-                              width: `${
-                                (credit.amountPaid / credit.totalAmount) * 100
-                              }%`,
+                              width: `${pct(credit.amountPaid, credit.totalAmount)}%`,
                             }}
-                          ></div>
+                          />
                         </div>
-                        <div className="text-xs text-zinc-400 mt-1">
-                          {(
-                            (credit.amountPaid / credit.totalAmount) *
-                            100
-                          ).toFixed(1)}
-                          % Paid
+                        <div className="text-xs text-zinc-500 mt-1">
+                          {pct(credit.amountPaid, credit.totalAmount)}% paid
                         </div>
                       </div>
-                    </div>
 
-                    {/* Actions */}
-                    <div className="flex flex-col gap-2 md:w-48">
-                      <button
-                        onClick={() => openDetailsModal(credit)}
-                        className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white py-2 px-4 rounded text-sm"
-                      >
-                        <Eye size={16} />
-                        View Details
-                      </button>
-                      {credit.status !== "cleared" && (
+                      {/* Actions */}
+                      <div className="flex flex-col gap-2 md:w-44">
                         <button
-                          onClick={() => openPaymentModal(credit)}
-                          className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded text-sm font-semibold"
+                          onClick={() => {
+                            setSelectedCredit(credit);
+                            setShowDetailsModal(true);
+                          }}
+                          className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white py-2 px-3 rounded text-sm"
                         >
-                          <DollarSign size={16} />
-                          Record Payment
+                          <Eye size={14} /> View Details
                         </button>
-                      )}
+                        {!isCleared && (
+                          <button
+                            onClick={() => openPaymentModal(credit)}
+                            className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2 px-3 rounded text-sm font-semibold"
+                          >
+                            <DollarSign size={14} /> Record Payment
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
-      {/* Payment Modal */}
+      {/* ── Payment Modal ──────────────────────────────────────────────────────── */}
       {showPaymentModal && selectedCredit && (
-        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-zinc-900 rounded-lg border border-zinc-800 max-w-md w-full">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-red-500">
+                <h2 className="text-xl font-bold text-red-500">
                   Record Payment
                 </h2>
                 <button
                   onClick={() => setShowPaymentModal(false)}
                   className="text-zinc-400 hover:text-white"
                 >
-                  <X size={24} />
+                  <X size={22} />
                 </button>
               </div>
 
-              {/* Customer Info */}
-              <div className="bg-black p-4 rounded border border-zinc-700 mb-6">
-                <h3 className="font-semibold text-white mb-2">
+              {/* Summary */}
+              <div className="bg-black p-4 rounded border border-zinc-700 mb-5">
+                <h3 className="font-semibold text-white mb-3">
                   {selectedCredit.customerName}
                 </h3>
-                <div className="space-y-1 text-sm">
+                <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Total Debt:</span>
                     <span className="text-white">
@@ -441,23 +451,23 @@ const Credits = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Already Paid:</span>
-                    <span className="text-green-500">
+                    <span className="text-green-400">
                       KSh {selectedCredit.amountPaid.toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between font-semibold border-t border-zinc-700 pt-2 mt-2">
                     <span className="text-white">Remaining:</span>
-                    <span className="text-red-500">
+                    <span className="text-red-400">
                       KSh {selectedCredit.remainingBalance.toLocaleString()}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Payment Form */}
+              {/* Form */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold mb-2">
+                  <label className="block text-sm font-semibold mb-1.5">
                     Payment Amount *
                   </label>
                   <input
@@ -466,80 +476,99 @@ const Credits = () => {
                     onChange={(e) => setPaymentAmount(e.target.value)}
                     placeholder="Enter amount"
                     max={selectedCredit.remainingBalance}
-                    className="w-full px-4 py-2 bg-black border border-zinc-700 rounded text-white focus:outline-none focus:border-red-500"
+                    className="w-full px-4 py-2 bg-black border border-zinc-700 rounded text-white focus:outline-none focus:border-red-500 text-sm"
                   />
-                  <div className="text-xs text-zinc-400 mt-1">
-                    Maximum: KSh{" "}
-                    {selectedCredit.remainingBalance.toLocaleString()}
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Max: KSh {selectedCredit.remainingBalance.toLocaleString()}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold mb-1.5">
+                    Payment Method
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Values are lowercase to match the CashOrMpesa enum exactly */}
+                    {[
+                      { value: "cash", label: "💵 Cash" },
+                      { value: "mpesa", label: "📱 M-Pesa" },
+                    ].map((m) => (
+                      <button
+                        key={m.value}
+                        onClick={() => setPaymentMethod(m.value)}
+                        className={`py-2 rounded border-2 text-sm font-semibold transition-all ${
+                          paymentMethod === m.value
+                            ? "border-red-600 bg-red-950 text-red-400"
+                            : "border-zinc-700 hover:border-zinc-500 text-zinc-300"
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold mb-2">
-                    Payment Method
-                  </label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full px-4 py-2 bg-black border border-zinc-700 rounded text-white focus:outline-none focus:border-red-500"
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="mpesa">M-Pesa</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold mb-2">
+                  <label className="block text-sm font-semibold mb-1.5">
                     Notes (Optional)
                   </label>
                   <textarea
                     value={paymentNotes}
                     onChange={(e) => setPaymentNotes(e.target.value)}
-                    placeholder="Add any notes..."
-                    rows="3"
-                    className="w-full px-4 py-2 bg-black border border-zinc-700 rounded text-white focus:outline-none focus:border-red-500"
-                  ></textarea>
+                    placeholder="Any notes..."
+                    rows={2}
+                    className="w-full px-4 py-2 bg-black border border-zinc-700 rounded text-white focus:outline-none focus:border-red-500 text-sm resize-none"
+                  />
                 </div>
               </div>
 
-              {/* Remaining Balance After Payment */}
+              {/* Balance preview */}
               {paymentAmount && parseFloat(paymentAmount) > 0 && (
-                <div className="bg-green-900 bg-opacity-30 border border-green-700 p-3 rounded mt-4">
+                <div className="bg-green-950 border border-green-800 p-3 rounded mt-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-green-400">
                       New Remaining Balance:
                     </span>
-                    <span className="font-semibold text-green-500">
+                    <span className="font-semibold text-green-300">
                       KSh{" "}
-                      {(
+                      {Math.max(
+                        0,
                         selectedCredit.remainingBalance -
-                        parseFloat(paymentAmount)
+                          parseFloat(paymentAmount),
                       ).toLocaleString()}
                     </span>
                   </div>
                   {selectedCredit.remainingBalance -
-                    parseFloat(paymentAmount) ===
+                    parseFloat(paymentAmount) <=
                     0 && (
                     <div className="text-xs text-green-400 mt-1">
-                      ✓ This payment will clear the debt
+                      ✓ This payment will fully clear the debt
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Action Buttons */}
-              <div className="flex gap-4 mt-6">
+              <div className="flex gap-3 mt-6">
                 <button
                   onClick={() => setShowPaymentModal(false)}
-                  className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white py-3 rounded font-semibold"
+                  disabled={paymentLoading}
+                  className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white py-3 rounded font-semibold disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={processPayment}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-semibold"
+                  disabled={paymentLoading}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  Record Payment
+                  {paymentLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />{" "}
+                      Processing...
+                    </>
+                  ) : (
+                    "Record Payment"
+                  )}
                 </button>
               </div>
             </div>
@@ -547,99 +576,100 @@ const Credits = () => {
         </div>
       )}
 
-      {/* Details Modal */}
+      {/* ── Details Modal ──────────────────────────────────────────────────────── */}
       {showDetailsModal && selectedCredit && (
-        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-zinc-900 rounded-lg border border-zinc-800 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-red-500">
+                <h2 className="text-xl font-bold text-red-500">
                   Credit Details
                 </h2>
                 <button
                   onClick={() => setShowDetailsModal(false)}
                   className="text-zinc-400 hover:text-white"
                 >
-                  <X size={24} />
+                  <X size={22} />
                 </button>
               </div>
 
-              {/* Customer Info */}
-              <div className="bg-black p-4 rounded border border-zinc-700 mb-6">
+              {/* Customer */}
+              <div className="bg-black p-4 rounded border border-zinc-700 mb-4">
                 <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-                  <User size={18} className="text-red-500" />
-                  Customer Information
+                  <User size={16} className="text-red-500" /> Customer
+                  Information
                 </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-zinc-400">Name:</span>
-                    <div className="font-semibold text-white">
+                    <span className="text-zinc-400 text-xs">Name</span>
+                    <div className="font-semibold text-white mt-0.5">
                       {selectedCredit.customerName}
                     </div>
                   </div>
                   {selectedCredit.customerPhone && (
                     <div>
-                      <span className="text-zinc-400">Phone:</span>
-                      <div className="font-semibold text-white">
+                      <span className="text-zinc-400 text-xs">Phone</span>
+                      <div className="font-semibold text-white mt-0.5">
                         {selectedCredit.customerPhone}
                       </div>
                     </div>
                   )}
                   <div>
-                    <span className="text-zinc-400">Credit Date:</span>
-                    <div className="font-semibold text-white">
+                    <span className="text-zinc-400 text-xs">Credit Date</span>
+                    {/* schema field: creditDate */}
+                    <div className="font-semibold text-white mt-0.5">
                       {formatDateTime(selectedCredit.creditDate)}
                     </div>
                   </div>
                   <div>
-                    <span className="text-zinc-400">Status:</span>
-                    <div>
+                    <span className="text-zinc-400 text-xs">Status</span>
+                    <div className="mt-0.5">
                       <span
-                        className={`inline-block px-2 py-1 rounded text-xs font-semibold border ${getStatusColor(
-                          selectedCredit.status
-                        )}`}
+                        className={`inline-block px-2 py-0.5 rounded text-xs font-semibold border ${statusMeta(selectedCredit.status).color}`}
                       >
-                        {getStatusText(selectedCredit.status)}
+                        {statusMeta(selectedCredit.status).label}
                       </span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Items Purchased */}
-              <div className="bg-black p-4 rounded border border-zinc-700 mb-6">
-                <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-                  <Package size={18} className="text-red-500" />
-                  Items Purchased on Credit
-                </h3>
-                <div className="space-y-2">
-                  {selectedCredit.items.map((item, index) => (
-                    <div
-                      key={index}
-                      className="flex justify-between items-center text-sm py-2 border-b border-zinc-800 last:border-0"
-                    >
-                      <div>
-                        <div className="font-semibold text-white">
-                          {item.productName}
+              {/* Items from linked sale */}
+              {selectedCredit.sale?.items?.length > 0 && (
+                <div className="bg-black p-4 rounded border border-zinc-700 mb-4">
+                  <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
+                    <Package size={16} className="text-red-500" /> Items
+                    Purchased
+                  </h3>
+                  <div className="space-y-2">
+                    {selectedCredit.sale.items.map((item, i) => (
+                      <div
+                        key={i}
+                        className="flex justify-between items-center text-sm py-2 border-b border-zinc-800 last:border-0"
+                      >
+                        <div>
+                          <div className="font-semibold text-white">
+                            {item.productName}
+                          </div>
+                          <div className="text-zinc-400 text-xs">
+                            {item.quantity} × KSh{" "}
+                            {item.unitPrice.toLocaleString()}
+                          </div>
                         </div>
-                        <div className="text-zinc-400">
-                          Qty: {item.quantity} × KSh{" "}
-                          {item.unitPrice.toLocaleString()}
+                        <div className="text-white font-semibold">
+                          KSh {item.subtotal.toLocaleString()}
                         </div>
                       </div>
-                      <div className="text-white font-semibold">
-                        KSh {item.subtotal.toLocaleString()}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Financial Summary */}
-              <div className="bg-black p-4 rounded border border-zinc-700 mb-6">
+              {/* Financial summary */}
+              <div className="bg-black p-4 rounded border border-zinc-700 mb-4">
                 <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-                  <DollarSign size={18} className="text-red-500" />
-                  Financial Summary
+                  <DollarSign size={16} className="text-red-500" /> Financial
+                  Summary
                 </h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
@@ -650,77 +680,70 @@ const Credits = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Amount Paid:</span>
-                    <span className="text-green-500 font-semibold">
+                    <span className="text-green-400 font-semibold">
                       KSh {selectedCredit.amountPaid.toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-zinc-700">
-                    <span className="text-white font-semibold">
-                      Remaining Balance:
-                    </span>
-                    <span className="text-red-500 font-bold text-lg">
+                    <span className="text-white font-semibold">Remaining:</span>
+                    <span className="text-red-400 font-bold text-lg">
                       KSh {selectedCredit.remainingBalance.toLocaleString()}
                     </span>
                   </div>
                 </div>
-                {/* Progress Bar */}
                 <div className="mt-3">
-                  <div className="w-full bg-zinc-800 rounded-full h-2">
+                  <div className="w-full bg-zinc-800 rounded-full h-1.5">
                     <div
-                      className="bg-green-500 h-2 rounded-full transition-all"
+                      className="bg-green-500 h-1.5 rounded-full transition-all"
                       style={{
-                        width: `${
-                          (selectedCredit.amountPaid /
-                            selectedCredit.totalAmount) *
-                          100
-                        }%`,
+                        width: `${pct(selectedCredit.amountPaid, selectedCredit.totalAmount)}%`,
                       }}
-                    ></div>
+                    />
                   </div>
-                  <div className="text-xs text-zinc-400 mt-1 text-center">
-                    {(
-                      (selectedCredit.amountPaid / selectedCredit.totalAmount) *
-                      100
-                    ).toFixed(1)}
+                  <div className="text-xs text-zinc-500 mt-1 text-center">
+                    {pct(selectedCredit.amountPaid, selectedCredit.totalAmount)}
                     % Paid
                   </div>
                 </div>
               </div>
 
-              {/* Payment History */}
-              {selectedCredit.payments.length > 0 && (
-                <div className="bg-black p-4 rounded border border-zinc-700 mb-6">
+              {/* Payment history — schema relation is paymentHistory, timestamp is paidAt */}
+              {selectedCredit.paymentHistory?.length > 0 && (
+                <div className="bg-black p-4 rounded border border-zinc-700 mb-4">
                   <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-                    <FileText size={18} className="text-red-500" />
-                    Payment History
+                    <FileText size={16} className="text-red-500" /> Payment
+                    History
                   </h3>
                   <div className="space-y-3">
-                    {selectedCredit.payments.map((payment, index) => (
+                    {selectedCredit.paymentHistory.map((p) => (
                       <div
-                        key={payment.paymentId}
+                        key={p.id}
                         className="bg-zinc-900 p-3 rounded border border-zinc-800"
                       >
-                        <div className="flex justify-between items-start mb-2">
+                        <div className="flex justify-between items-start mb-1.5">
                           <div>
-                            <div className="font-semibold text-green-500">
-                              KSh {payment.amount.toLocaleString()}
+                            <div className="font-semibold text-green-400">
+                              KSh {p.amount.toLocaleString()}
                             </div>
+                            {/* schema field: paidAt */}
                             <div className="text-xs text-zinc-400">
-                              {formatDateTime(payment.date)}
+                              {formatDateTime(p.paidAt)}
                             </div>
                           </div>
-                          <span className="text-xs px-2 py-1 bg-zinc-800 rounded text-zinc-300">
-                            {payment.paymentMethod === "cash"
-                              ? "Cash"
-                              : "M-Pesa"}
+                          <span className="text-xs px-2 py-0.5 bg-zinc-800 rounded text-zinc-300">
+                            {p.paymentMethod === "cash"
+                              ? "💵 Cash"
+                              : "📱 M-Pesa"}
                           </span>
                         </div>
-                        <div className="text-xs text-zinc-400">
-                          Received by: {payment.receivedByName}
-                        </div>
-                        {payment.notes && (
-                          <div className="text-xs text-zinc-400 mt-2 italic">
-                            Note: {payment.notes}
+                        {p.receivedByName && (
+                          <div className="text-xs text-zinc-400">
+                            Received by: {p.receivedByName}
+                          </div>
+                        )}
+                        {p.notes && (
+                          <div className="text-xs text-zinc-500 mt-1 italic">
+                            {p.notes}
                           </div>
                         )}
                       </div>
@@ -729,9 +752,8 @@ const Credits = () => {
                 </div>
               )}
 
-              {/* Notes */}
               {selectedCredit.notes && (
-                <div className="bg-black p-4 rounded border border-zinc-700 mb-6">
+                <div className="bg-black p-4 rounded border border-zinc-700 mb-4">
                   <h3 className="font-semibold text-white mb-2">Notes</h3>
                   <p className="text-sm text-zinc-400">
                     {selectedCredit.notes}
@@ -739,25 +761,25 @@ const Credits = () => {
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="flex gap-4">
+              <div className="flex gap-3">
                 <button
                   onClick={() => setShowDetailsModal(false)}
                   className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white py-3 rounded font-semibold"
                 >
                   Close
                 </button>
-                {selectedCredit.status !== "cleared" && (
-                  <button
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      openPaymentModal(selectedCredit);
-                    }}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-semibold"
-                  >
-                    Record Payment
-                  </button>
-                )}
+                {selectedCredit.status !== "PAID" &&
+                  selectedCredit.status !== "CANCELLED" && (
+                    <button
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        openPaymentModal(selectedCredit);
+                      }}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-semibold"
+                    >
+                      Record Payment
+                    </button>
+                  )}
               </div>
             </div>
           </div>

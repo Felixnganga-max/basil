@@ -49,7 +49,7 @@ router.get("/:id", getSaleById);
  * @body    items, totalAmount, totalDiscount, finalAmount, totalCost, totalProfit,
  *          paymentMethod, paymentDetails, customerName, customerPhone, notes, soldBy, soldByName
  */
-router.post("/", createSale);
+router.post("/create-sale", createSale);
 
 /**
  * @route   PUT /api/sales/:id/return

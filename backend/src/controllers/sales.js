@@ -1,7 +1,20 @@
-const { Sale, Credit, Product } = require("../../prisma");
-// const { Product } = require("../models/inventory");
+// controllers/sales.js
+const prisma = require("../../prisma");
 
 // ==================== SALES CONTROLLERS ====================
+
+// Helper: adds paymentDetails object to every sale response
+// so the frontend doesn't need to change how it reads payment info
+function formatSale(sale) {
+  return {
+    ...sale,
+    paymentDetails: {
+      cash: sale.cashAmount,
+      mpesa: sale.mpesaAmount,
+      credit: sale.creditAmount,
+    },
+  };
+}
 
 // Get all sales with filtering
 exports.getAllSales = async (req, res) => {
@@ -19,66 +32,57 @@ exports.getAllSales = async (req, res) => {
       page = 1,
     } = req.query;
 
-    let query = {};
+    const where = {};
 
-    // Date range filter
     if (startDate || endDate) {
-      query.saleDate = {};
-      if (startDate) query.saleDate.$gte = new Date(startDate);
+      where.saleDate = {};
+      if (startDate) where.saleDate.gte = new Date(startDate);
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        query.saleDate.$lte = end;
+        where.saleDate.lte = end;
       }
     }
 
-    // Status filter
-    if (status) {
-      query.status = status;
-    }
+    if (status) where.status = status;
+    if (paymentMethod) where.paymentMethod = paymentMethod;
+    if (soldBy) where.soldBy = soldBy;
+    if (customerName)
+      where.customerName = { contains: customerName, mode: "insensitive" };
+    if (isReturned !== undefined) where.isReturned = isReturned === "true";
 
-    // Payment method filter
-    if (paymentMethod) {
-      query.paymentMethod = paymentMethod;
-    }
-
-    // Sold by filter
-    if (soldBy) {
-      query.soldBy = soldBy;
-    }
-
-    // Customer name filter
-    if (customerName) {
-      query.customerName = { $regex: customerName, $options: "i" };
-    }
-
-    // Search filter (customer name or notes)
     if (search) {
-      query.$or = [
-        { customerName: { $regex: search, $options: "i" } },
-        { notes: { $regex: search, $options: "i" } },
-        { soldByName: { $regex: search, $options: "i" } },
+      where.OR = [
+        { customerName: { contains: search, mode: "insensitive" } },
+        { notes: { contains: search, mode: "insensitive" } },
+        { soldByName: { contains: search, mode: "insensitive" } },
       ];
-    }
-
-    // Return status filter
-    if (isReturned !== undefined) {
-      query.isReturned = isReturned === "true";
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const sales = await Sale.find(query)
-      .populate("items.productId", "name sku category")
-      .sort({ saleDate: -1 })
-      .limit(parseInt(limit))
-      .skip(skip);
-
-    const totalCount = await Sale.countDocuments(query);
+    const [sales, totalCount] = await Promise.all([
+      prisma.sale.findMany({
+        where,
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { name: true, sku: true, categoryName: true },
+              },
+            },
+          },
+        },
+        orderBy: { saleDate: "desc" },
+        take: parseInt(limit),
+        skip,
+      }),
+      prisma.sale.count({ where }),
+    ]);
 
     res.status(200).json({
       success: true,
-      data: sales,
+      data: sales.map(formatSale),
       count: sales.length,
       totalCount,
       page: parseInt(page),
@@ -96,22 +100,31 @@ exports.getAllSales = async (req, res) => {
 // Get single sale by ID
 exports.getSaleById = async (req, res) => {
   try {
-    const sale = await Sale.findById(req.params.id).populate(
-      "items.productId",
-      "name sku category subcategory",
-    );
+    const sale = await prisma.sale.findUnique({
+      where: { id: req.params.id },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                name: true,
+                sku: true,
+                categoryName: true,
+                subcategory: true,
+              },
+            },
+          },
+        },
+      },
+    });
 
     if (!sale) {
-      return res.status(404).json({
-        success: false,
-        message: "Sale not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Sale not found" });
     }
 
-    res.status(200).json({
-      success: true,
-      data: sale,
-    });
+    res.status(200).json({ success: true, data: formatSale(sale) });
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -121,7 +134,6 @@ exports.getSaleById = async (req, res) => {
   }
 };
 
-// Create new sale
 // Create new sale
 exports.createSale = async (req, res) => {
   try {
@@ -144,7 +156,6 @@ exports.createSale = async (req, res) => {
       soldByName,
     } = req.body;
 
-    // Validate required fields
     if (!items || items.length === 0) {
       console.log("ERROR: No items in cart");
       return res.status(400).json({
@@ -155,128 +166,150 @@ exports.createSale = async (req, res) => {
 
     console.log(`Validating ${items.length} items...`);
 
-    // Validate stock availability and get product details
-    for (const item of items) {
-      console.log(`Checking product: ${item.productId}`);
-      const product = await Product.findById(item.productId);
-
-      if (!product) {
-        console.log(`ERROR: Product not found - ${item.productId}`);
-        return res.status(404).json({
-          success: false,
-          message: `Product ${item.productName} not found`,
+    // Use a transaction so stock validation + sale creation + stock decrement
+    // are fully atomic — if anything fails, everything rolls back
+    const sale = await prisma.$transaction(async (tx) => {
+      // 1. Validate stock for every item before touching anything
+      for (const item of items) {
+        console.log(`Checking product: ${item.productId}`);
+        const product = await tx.product.findUnique({
+          where: { id: item.productId },
         });
+
+        if (!product) {
+          throw {
+            statusCode: 404,
+            message: `Product ${item.productName} not found`,
+          };
+        }
+
+        console.log(
+          `Product found: ${product.name}, Stock: ${product.quantity}, Requested: ${item.quantity}`,
+        );
+
+        if (product.quantity < item.quantity) {
+          throw {
+            statusCode: 400,
+            message: `Insufficient stock for ${item.productName}. Available: ${product.quantity}, Requested: ${item.quantity}`,
+          };
+        }
       }
 
-      console.log(
-        `Product found: ${product.name}, Stock: ${product.quantity}, Requested: ${item.quantity}`,
-      );
-
-      if (product.quantity < item.quantity) {
-        console.log(`ERROR: Insufficient stock for ${product.name}`);
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock for ${item.productName}. Available: ${product.quantity}, Requested: ${item.quantity}`,
-        });
+      // 2. Determine sale status
+      let status = "COMPLETED";
+      if (paymentDetails.credit > 0) {
+        status =
+          paymentDetails.cash > 0 || paymentDetails.mpesa > 0
+            ? "PARTIAL"
+            : "CREDIT";
       }
-    }
 
-    // Determine sale status based on payment
-    let status = "completed";
-    if (paymentDetails.credit > 0) {
-      status =
-        paymentDetails.cash > 0 || paymentDetails.mpesa > 0
-          ? "partial"
-          : "credit";
-    }
+      console.log(`Creating sale with status: ${status}`);
 
-    console.log(`Creating sale with status: ${status}`);
-
-    // Create sale record
-    const sale = await Sale.create({
-      items,
-      totalAmount,
-      totalDiscount,
-      finalAmount,
-      totalCost,
-      totalProfit,
-      paymentMethod,
-      paymentDetails,
-      customerId: customerName ? `cust_${Date.now()}` : null,
-      customerName: customerName || null,
-      customerPhone: customerPhone || null,
-      soldBy: soldBy || "system",
-      soldByName: soldByName || "System",
-      status,
-      notes: notes || "",
-      saleDate: Date.now(),
-    });
-
-    console.log(`Sale created with ID: ${sale._id}`);
-
-    // Update inventory quantities - REDUCE stock
-    for (const item of items) {
-      console.log(
-        `Updating stock for product: ${item.productId}, reducing by ${item.quantity}`,
-      );
-      const product = await Product.findByIdAndUpdate(
-        item.productId,
-        {
-          $inc: { quantity: -item.quantity },
-          updatedAt: Date.now(),
+      // 3. Create the sale + all items in one go
+      const newSale = await tx.sale.create({
+        data: {
+          totalAmount,
+          totalDiscount: totalDiscount || 0,
+          finalAmount,
+          totalCost,
+          totalProfit,
+          paymentMethod,
+          cashAmount: paymentDetails.cash || 0,
+          mpesaAmount: paymentDetails.mpesa || 0,
+          creditAmount: paymentDetails.credit || 0,
+          customerId: customerName ? `cust_${Date.now()}` : null,
+          customerName: customerName || null,
+          customerPhone: customerPhone || null,
+          soldBy: soldBy || "system",
+          soldByName: soldByName || "System",
+          status,
+          notes: notes || "",
+          items: {
+            create: items.map((item) => ({
+              productId: item.productId,
+              productName: item.productName,
+              sku: item.sku || "",
+              quantity: item.quantity,
+              costPrice: item.costPrice,
+              unitPrice: item.unitPrice,
+              discount: item.discount || 0,
+              subtotal: item.subtotal,
+              profit: item.profit,
+            })),
+          },
         },
-        { new: true },
-      );
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  name: true,
+                  sku: true,
+                  categoryName: true,
+                  subcategory: true,
+                },
+              },
+            },
+          },
+        },
+      });
 
-      if (!product) {
-        console.log(`ERROR: Failed to update stock for ${item.productName}`);
-        return res.status(500).json({
-          success: false,
-          message: `Error updating stock for ${item.productName}`,
+      console.log(`Sale created with ID: ${newSale.id}`);
+
+      // 4. Decrement stock for each item
+      for (const item of items) {
+        console.log(
+          `Updating stock for product: ${item.productId}, reducing by ${item.quantity}`,
+        );
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: { decrement: item.quantity } },
         });
       }
-      console.log(`Stock updated. New quantity: ${product.quantity}`);
-    }
 
-    // Create credit record if needed
-    if (paymentDetails.credit > 0) {
-      console.log(
-        `Creating credit record for amount: ${paymentDetails.credit}`,
-      );
-      await Credit.create({
-        customerId: sale.customerId,
-        customerName,
-        customerPhone,
-        saleId: sale._id,
-        items: sale.items,
-        totalAmount: paymentDetails.credit,
-        amountPaid: 0,
-        remainingBalance: paymentDetails.credit,
-        status: "active",
-        notes: notes || "",
-        creditDate: Date.now(),
-      });
-      console.log("Credit record created");
-    }
+      // 5. Create credit record if applicable
+      if (paymentDetails.credit > 0) {
+        console.log(
+          `Creating credit record for amount: ${paymentDetails.credit}`,
+        );
+        await tx.credit.create({
+          data: {
+            customerId: newSale.customerId,
+            customerName,
+            customerPhone: customerPhone || null,
+            saleId: newSale.id,
+            totalAmount: paymentDetails.credit,
+            amountPaid: 0,
+            remainingBalance: paymentDetails.credit,
+            status: "ACTIVE",
+            notes: notes || "",
+          },
+        });
+        console.log("Credit record created");
+      }
 
-    // Populate the sale before returning
-    const populatedSale = await Sale.findById(sale._id).populate(
-      "items.productId",
-      "name sku category subcategory",
-    );
+      return newSale;
+    });
 
     console.log("=== SALE COMPLETED SUCCESSFULLY ===");
 
     res.status(201).json({
       success: true,
-      data: populatedSale,
+      data: formatSale(sale),
       message: "Sale completed successfully",
     });
   } catch (error) {
     console.error("=== ERROR IN CREATE SALE ===");
-    console.error("Error name:", error.name);
-    console.error("Error message:", error.message);
-    console.error("Error stack:", error.stack);
+    console.error("Error:", error.message || error);
+
+    // Handle validation errors thrown inside the transaction
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
 
     res.status(500).json({
       success: false,
@@ -286,18 +319,20 @@ exports.createSale = async (req, res) => {
   }
 };
 
-// Return/Refund a sale
+// Return / Refund a sale
 exports.returnSale = async (req, res) => {
   try {
     const { returnedBy, returnedByName, returnNotes } = req.body;
 
-    const sale = await Sale.findById(req.params.id);
+    const sale = await prisma.sale.findUnique({
+      where: { id: req.params.id },
+      include: { items: true },
+    });
 
     if (!sale) {
-      return res.status(404).json({
-        success: false,
-        message: "Sale not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Sale not found" });
     }
 
     if (sale.isReturned) {
@@ -307,56 +342,59 @@ exports.returnSale = async (req, res) => {
       });
     }
 
-    // Update inventory quantities - INCREASE stock back
-    for (const item of sale.items) {
-      const product = await Product.findByIdAndUpdate(
-        item.productId,
-        {
-          $inc: { quantity: item.quantity },
-          updatedAt: Date.now(),
-        },
-        { new: true },
-      );
-
-      if (!product) {
-        return res.status(404).json({
-          success: false,
-          message: `Product ${item.productName} not found for return`,
+    const updatedSale = await prisma.$transaction(async (tx) => {
+      // 1. Restore stock for every item
+      for (const item of sale.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: { increment: item.quantity } },
         });
       }
-    }
 
-    // Update sale status
-    sale.isReturned = true;
-    sale.status = "returned";
-    sale.returnedAt = Date.now();
-    sale.returnedBy = returnedBy || "system";
-    sale.returnedByName = returnedByName || "System";
-    sale.returnNotes = returnNotes || "";
-    sale.updatedAt = Date.now();
-
-    await sale.save();
-
-    // If there was a credit associated, mark it as cancelled
-    if (sale.paymentDetails.credit > 0) {
-      await Credit.findOneAndUpdate(
-        { saleId: sale._id },
-        {
-          status: "cancelled",
-          notes: `Sale returned: ${returnNotes || "No reason provided"}`,
-          updatedAt: Date.now(),
+      // 2. Mark sale as returned
+      const updated = await tx.sale.update({
+        where: { id: req.params.id },
+        data: {
+          isReturned: true,
+          status: "RETURNED",
+          returnedAt: new Date(),
+          returnedBy: returnedBy || "system",
+          returnedByName: returnedByName || "System",
+          returnNotes: returnNotes || "",
         },
-      );
-    }
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  name: true,
+                  sku: true,
+                  categoryName: true,
+                  subcategory: true,
+                },
+              },
+            },
+          },
+        },
+      });
 
-    const populatedSale = await Sale.findById(sale._id).populate(
-      "items.productId",
-      "name sku category subcategory",
-    );
+      // 3. Cancel associated credit if any
+      if (sale.creditAmount > 0) {
+        await tx.credit.updateMany({
+          where: { saleId: sale.id },
+          data: {
+            status: "CANCELLED",
+            notes: `Sale returned: ${returnNotes || "No reason provided"}`,
+          },
+        });
+      }
+
+      return updated;
+    });
 
     res.status(200).json({
       success: true,
-      data: populatedSale,
+      data: formatSale(updatedSale),
       message: "Sale returned successfully. Stock has been restored.",
     });
   } catch (error) {
@@ -373,120 +411,109 @@ exports.getSalesStats = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    let dateQuery = {};
+    const dateFilter = {};
     if (startDate || endDate) {
-      dateQuery.saleDate = {};
-      if (startDate) dateQuery.saleDate.$gte = new Date(startDate);
+      dateFilter.saleDate = {};
+      if (startDate) dateFilter.saleDate.gte = new Date(startDate);
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        dateQuery.saleDate.$lte = end;
+        dateFilter.saleDate.lte = end;
       }
     }
 
-    // Total sales statistics
-    const stats = await Sale.aggregate([
-      { $match: { ...dateQuery, isReturned: false } },
-      {
-        $group: {
-          _id: null,
-          totalSales: { $sum: 1 },
-          totalRevenue: { $sum: "$finalAmount" },
-          totalCost: { $sum: "$totalCost" },
-          totalProfit: { $sum: "$totalProfit" },
-          totalDiscount: { $sum: "$totalDiscount" },
-          totalItemsSold: { $sum: { $size: "$items" } },
-        },
-      },
-    ]);
+    const baseWhere = { ...dateFilter, isReturned: false };
 
-    // Sales by payment method
-    const byPaymentMethod = await Sale.aggregate([
-      { $match: { ...dateQuery, isReturned: false } },
-      {
-        $group: {
-          _id: "$paymentMethod",
-          count: { $sum: 1 },
-          total: { $sum: "$finalAmount" },
-        },
-      },
-    ]);
-
-    // Sales by status
-    const byStatus = await Sale.aggregate([
-      { $match: { ...dateQuery, isReturned: false } },
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-          total: { $sum: "$finalAmount" },
-        },
-      },
-    ]);
-
-    // Top selling products
-    const topProducts = await Sale.aggregate([
-      { $match: { ...dateQuery, isReturned: false } },
-      { $unwind: "$items" },
-      {
-        $group: {
-          _id: "$items.productId",
-          productName: { $first: "$items.productName" },
-          totalQuantity: { $sum: "$items.quantity" },
-          totalRevenue: { $sum: "$items.subtotal" },
-          totalProfit: { $sum: "$items.profit" },
-        },
-      },
-      { $sort: { totalQuantity: -1 } },
-      { $limit: 10 },
-    ]);
-
-    // Sales by day (for charts)
-    const dailySales = await Sale.aggregate([
-      { $match: { ...dateQuery, isReturned: false } },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$saleDate" },
+    const [overallAgg, byPaymentMethod, byStatus, itemsAgg, returnAgg] =
+      await Promise.all([
+        prisma.sale.aggregate({
+          where: baseWhere,
+          _count: { id: true },
+          _sum: {
+            finalAmount: true,
+            totalCost: true,
+            totalProfit: true,
+            totalDiscount: true,
           },
-          count: { $sum: 1 },
-          revenue: { $sum: "$finalAmount" },
-          profit: { $sum: "$totalProfit" },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]);
+        }),
+        prisma.sale.groupBy({
+          by: ["paymentMethod"],
+          where: baseWhere,
+          _count: { id: true },
+          _sum: { finalAmount: true },
+        }),
+        prisma.sale.groupBy({
+          by: ["status"],
+          where: baseWhere,
+          _count: { id: true },
+          _sum: { finalAmount: true },
+        }),
+        prisma.saleItem.aggregate({
+          where: { sale: baseWhere },
+          _sum: { quantity: true },
+        }),
+        prisma.sale.aggregate({
+          where: { ...dateFilter, isReturned: true },
+          _count: { id: true },
+          _sum: { finalAmount: true },
+        }),
+      ]);
 
-    // Returns statistics
-    const returnStats = await Sale.aggregate([
-      { $match: { ...dateQuery, isReturned: true } },
-      {
-        $group: {
-          _id: null,
-          totalReturns: { $sum: 1 },
-          totalReturnedValue: { $sum: "$finalAmount" },
-        },
-      },
-    ]);
+    // Top products — requires raw SQL (groupBy on a joined table)
+    const topProducts = await prisma.$queryRaw`
+      SELECT
+        si."productId",
+        si."productName",
+        SUM(si.quantity)::int  AS "totalQuantity",
+        SUM(si.subtotal)       AS "totalRevenue",
+        SUM(si.profit)         AS "totalProfit"
+      FROM sale_items si
+      INNER JOIN sales s ON si."saleId" = s.id
+      WHERE s."isReturned" = false
+      GROUP BY si."productId", si."productName"
+      ORDER BY "totalQuantity" DESC
+      LIMIT 10
+    `;
+
+    // Daily sales — requires raw SQL (date formatting)
+    const dailySales = await prisma.$queryRaw`
+      SELECT
+        TO_CHAR("saleDate", 'YYYY-MM-DD') AS "_id",
+        COUNT(*)::int                      AS count,
+        SUM("finalAmount")                 AS revenue,
+        SUM("totalProfit")                 AS profit
+      FROM sales
+      WHERE "isReturned" = false
+      GROUP BY TO_CHAR("saleDate", 'YYYY-MM-DD')
+      ORDER BY "_id" ASC
+    `;
 
     res.status(200).json({
       success: true,
       data: {
-        overall: stats[0] || {
-          totalSales: 0,
-          totalRevenue: 0,
-          totalCost: 0,
-          totalProfit: 0,
-          totalDiscount: 0,
-          totalItemsSold: 0,
+        overall: {
+          totalSales: overallAgg._count.id || 0,
+          totalRevenue: overallAgg._sum.finalAmount || 0,
+          totalCost: overallAgg._sum.totalCost || 0,
+          totalProfit: overallAgg._sum.totalProfit || 0,
+          totalDiscount: overallAgg._sum.totalDiscount || 0,
+          totalItemsSold: itemsAgg._sum.quantity || 0,
         },
-        byPaymentMethod,
-        byStatus,
+        byPaymentMethod: byPaymentMethod.map((r) => ({
+          _id: r.paymentMethod,
+          count: r._count.id,
+          total: r._sum.finalAmount,
+        })),
+        byStatus: byStatus.map((r) => ({
+          _id: r.status,
+          count: r._count.id,
+          total: r._sum.finalAmount,
+        })),
         topProducts,
         dailySales,
-        returns: returnStats[0] || {
-          totalReturns: 0,
-          totalReturnedValue: 0,
+        returns: {
+          totalReturns: returnAgg._count.id || 0,
+          totalReturnedValue: returnAgg._sum.finalAmount || 0,
         },
       },
     });
@@ -504,60 +531,46 @@ exports.getTodaySales = async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const todaySales = await Sale.find({
-      saleDate: { $gte: today, $lt: tomorrow },
-      isReturned: false,
-    }).populate("items.productId", "name sku");
+    const where = { saleDate: { gte: today, lt: tomorrow }, isReturned: false };
 
-    const stats = await Sale.aggregate([
-      {
-        $match: {
-          saleDate: { $gte: today, $lt: tomorrow },
-          isReturned: false,
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalTransactions: { $sum: 1 },
-          totalRevenue: { $sum: "$finalAmount" },
-          totalProfit: { $sum: "$totalProfit" },
-          totalDiscount: { $sum: "$totalDiscount" },
-          cashSales: {
-            $sum: {
-              $cond: [{ $eq: ["$paymentMethod", "cash"] }, "$finalAmount", 0],
-            },
-          },
-          mpesaSales: {
-            $sum: {
-              $cond: [{ $eq: ["$paymentMethod", "mpesa"] }, "$finalAmount", 0],
-            },
-          },
-          creditSales: {
-            $sum: {
-              $cond: [{ $eq: ["$paymentMethod", "credit"] }, "$finalAmount", 0],
-            },
+    const [sales, stats] = await Promise.all([
+      prisma.sale.findMany({
+        where,
+        include: {
+          items: {
+            include: { product: { select: { name: true, sku: true } } },
           },
         },
-      },
+      }),
+      prisma.sale.aggregate({
+        where,
+        _count: { id: true },
+        _sum: {
+          finalAmount: true,
+          totalProfit: true,
+          totalDiscount: true,
+          cashAmount: true,
+          mpesaAmount: true,
+          creditAmount: true,
+        },
+      }),
     ]);
 
     res.status(200).json({
       success: true,
       data: {
-        sales: todaySales,
-        statistics: stats[0] || {
-          totalTransactions: 0,
-          totalRevenue: 0,
-          totalProfit: 0,
-          totalDiscount: 0,
-          cashSales: 0,
-          mpesaSales: 0,
-          creditSales: 0,
+        sales: sales.map(formatSale),
+        statistics: {
+          totalTransactions: stats._count.id || 0,
+          totalRevenue: stats._sum.finalAmount || 0,
+          totalProfit: stats._sum.totalProfit || 0,
+          totalDiscount: stats._sum.totalDiscount || 0,
+          cashSales: stats._sum.cashAmount || 0,
+          mpesaSales: stats._sum.mpesaAmount || 0,
+          creditSales: stats._sum.creditAmount || 0,
         },
       },
     });
@@ -573,13 +586,15 @@ exports.getTodaySales = async (req, res) => {
 // Delete sale (admin only - use with caution)
 exports.deleteSale = async (req, res) => {
   try {
-    const sale = await Sale.findById(req.params.id);
+    const sale = await prisma.sale.findUnique({
+      where: { id: req.params.id },
+      include: { items: true },
+    });
 
     if (!sale) {
-      return res.status(404).json({
-        success: false,
-        message: "Sale not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Sale not found" });
     }
 
     if (sale.isReturned) {
@@ -590,20 +605,23 @@ exports.deleteSale = async (req, res) => {
       });
     }
 
-    // Restore inventory before deleting
-    for (const item of sale.items) {
-      await Product.findByIdAndUpdate(item.productId, {
-        $inc: { quantity: item.quantity },
-        updatedAt: Date.now(),
-      });
-    }
+    await prisma.$transaction(async (tx) => {
+      // 1. Restore inventory
+      for (const item of sale.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: { increment: item.quantity } },
+        });
+      }
 
-    // Delete associated credit if exists
-    if (sale.paymentDetails.credit > 0) {
-      await Credit.findOneAndDelete({ saleId: sale._id });
-    }
+      // 2. Delete associated credit if exists
+      if (sale.creditAmount > 0) {
+        await tx.credit.deleteMany({ where: { saleId: sale.id } });
+      }
 
-    await Sale.findByIdAndDelete(req.params.id);
+      // 3. Delete sale (sale_items cascade automatically via schema)
+      await tx.sale.delete({ where: { id: req.params.id } });
+    });
 
     res.status(200).json({
       success: true,

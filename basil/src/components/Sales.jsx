@@ -8,27 +8,23 @@ import {
   X,
   Package,
   CheckCircle,
-  AlertCircle,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
 
 // API Configuration
-const API_BASE_URL = "https://basil-bhmb.vercel.app/api";
+const API_BASE_URL = "http://localhost:5000/api";
 
 // API Helper Functions
 const api = {
-  // Categories
   getCategories: () =>
     fetch(`${API_BASE_URL}/inventory/categories`).then((r) => r.json()),
 
-  // Products
   getProducts: (query = "") =>
     fetch(`${API_BASE_URL}/inventory/products${query}`).then((r) => r.json()),
 
-  // Sales
   createSale: (data) =>
-    fetch(`${API_BASE_URL}/sales`, {
+    fetch(`${API_BASE_URL}/sales/create-sale`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -51,7 +47,10 @@ const Sales = () => {
   const [customerPhone, setCustomerPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [expandedProduct, setExpandedProduct] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser] = useState({
+    id: "user_default",
+    fullName: "Admin User",
+  });
 
   useEffect(() => {
     loadData();
@@ -61,32 +60,17 @@ const Sales = () => {
     try {
       setLoading(true);
 
-      // Load categories
       const categoriesRes = await api.getCategories();
-      if (categoriesRes.success) {
-        setCategories(categoriesRes.data);
-      }
+      if (categoriesRes.success) setCategories(categoriesRes.data);
 
-      // Load inventory - only products with stock
       const inventoryRes = await api.getProducts();
       if (inventoryRes.success) {
-        // Filter products with stock > 0
-        const availableProducts = inventoryRes.data.filter(
-          (product) => product.quantity > 0
-        );
-        setInventory(availableProducts);
+        setInventory(inventoryRes.data.filter((p) => p.quantity > 0));
       }
-
-      // Set current user (you can get this from your auth system)
-      const defaultUser = {
-        id: "user_default",
-        fullName: "Admin User",
-      };
-      setCurrentUser(defaultUser);
     } catch (error) {
       console.error("Error loading data:", error);
       alert(
-        "Failed to load data. Please check if the backend is running on http://localhost:5000"
+        "Failed to load data. Please check if the backend is running on http://localhost:5000",
       );
     } finally {
       setLoading(false);
@@ -98,9 +82,9 @@ const Sales = () => {
       (product.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (product.sku || "").toLowerCase().includes(searchTerm.toLowerCase());
 
-    const categoryId = product.category?._id || product.category;
+    // Prisma returns id (not _id)
     const matchesCategory =
-      selectedCategory === "all" || categoryId === selectedCategory;
+      selectedCategory === "all" || product.categoryId === selectedCategory;
 
     const matchesSubcategory =
       selectedSubcategory === "all" ||
@@ -117,22 +101,27 @@ const Sales = () => {
   const availableSubcategories =
     selectedCategory === "all"
       ? []
-      : categories.find((cat) => cat._id === selectedCategory)?.subcategories ||
-        [];
+      : (() => {
+          const cat = categories.find((c) => c.id === selectedCategory);
+          if (!cat) return [];
+          // subcategories is stored as JSON array
+          const subs = cat.subcategories;
+          return Array.isArray(subs) ? subs : [];
+        })();
 
   const updateProductQuantity = (productId, newQuantity) => {
-    const product = inventory.find((p) => p._id === productId);
+    const product = inventory.find((p) => p.id === productId);
     if (!product) return;
 
     if (newQuantity <= 0) {
       removeFromCart(productId);
     } else if (newQuantity <= product.quantity) {
-      const existingItem = cart.find((item) => item._id === productId);
+      const existingItem = cart.find((item) => item.id === productId);
       if (existingItem) {
         setCart(
           cart.map((item) =>
-            item._id === productId ? { ...item, quantity: newQuantity } : item
-          )
+            item.id === productId ? { ...item, quantity: newQuantity } : item,
+          ),
         );
       } else {
         setCart([...cart, { ...product, quantity: newQuantity, discount: 0 }]);
@@ -145,36 +134,34 @@ const Sales = () => {
   const updateDiscount = (productId, discount) => {
     setCart(
       cart.map((item) =>
-        item._id === productId
+        item.id === productId
           ? {
               ...item,
               discount: Math.max(0, Math.min(discount, item.price || 0)),
             }
-          : item
-      )
+          : item,
+      ),
     );
   };
 
   const removeFromCart = (productId) => {
-    setCart(cart.filter((item) => item._id !== productId));
-    if (expandedProduct === productId) {
-      setExpandedProduct(null);
-    }
+    setCart(cart.filter((item) => item.id !== productId));
+    if (expandedProduct === productId) setExpandedProduct(null);
   };
 
   const calculateTotals = () => {
     const subtotal = cart.reduce(
       (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
-      0
+      0,
     );
     const totalDiscount = cart.reduce(
       (sum, item) => sum + (item.discount || 0) * (item.quantity || 0),
-      0
+      0,
     );
     const total = subtotal - totalDiscount;
     const totalCost = cart.reduce(
       (sum, item) => sum + (item.costPrice || 0) * (item.quantity || 0),
-      0
+      0,
     );
     const profit = total - totalCost;
     return { subtotal, totalDiscount, total, totalCost, profit };
@@ -184,7 +171,7 @@ const Sales = () => {
     calculateTotals();
 
   const getCartItemQuantity = (productId) => {
-    const item = cart.find((i) => i._id === productId);
+    const item = cart.find((i) => i.id === productId);
     return item ? item.quantity : 0;
   };
 
@@ -196,7 +183,6 @@ const Sales = () => {
 
     try {
       let paymentDetails = { cash: 0, mpesa: 0, credit: 0 };
-      let status = "completed";
 
       if (paymentMethod === "cash") {
         paymentDetails.cash = total;
@@ -205,22 +191,16 @@ const Sales = () => {
       } else if (paymentMethod === "split") {
         const cash = parseFloat(cashAmount) || 0;
         const mpesa = parseFloat(mpesaAmount) || 0;
-
         if (cash + mpesa > total) {
           alert("Payment amounts exceed total!");
           return;
         }
-
         paymentDetails.cash = cash;
         paymentDetails.mpesa = mpesa;
         paymentDetails.credit = total - cash - mpesa;
-
-        if (paymentDetails.credit > 0) {
-          status = "partial";
-          if (!customerName.trim()) {
-            alert("Customer name required for credit sales!");
-            return;
-          }
+        if (paymentDetails.credit > 0 && !customerName.trim()) {
+          alert("Customer name required for credit sales!");
+          return;
         }
       } else if (paymentMethod === "credit") {
         if (!customerName.trim()) {
@@ -228,13 +208,11 @@ const Sales = () => {
           return;
         }
         paymentDetails.credit = total;
-        status = "credit";
       }
 
-      // Prepare sale data for API
       const saleData = {
         items: cart.map((item) => ({
-          productId: item._id,
+          productId: item.id, // ✅ Prisma uses id not _id
           productName: item.name,
           sku: item.sku || "",
           quantity: item.quantity,
@@ -260,16 +238,11 @@ const Sales = () => {
         notes: notes || "",
       };
 
-      // Submit sale to API
       const response = await api.createSale(saleData);
 
       if (response.success) {
         alert("Sale completed successfully!");
-
-        // Reload inventory to get updated stock levels
         await loadData();
-
-        // Reset form
         setCart([]);
         setShowCheckout(false);
         setPaymentMethod("cash");
@@ -339,9 +312,9 @@ const Sales = () => {
                 >
                   <option value="all">All Categories</option>
                   {categories.map((cat) => (
-                    <option key={cat._id} value={cat._id}>
+                    <option key={cat.id} value={cat.id}>
                       {cat.name}
-                    </option>
+                    </option> // ✅ cat.id not cat._id
                   ))}
                 </select>
 
@@ -373,25 +346,22 @@ const Sales = () => {
                   </div>
                 ) : (
                   filteredProducts.map((product) => {
-                    const cartQty = getCartItemQuantity(product._id);
+                    const cartQty = getCartItemQuantity(product.id); // ✅ product.id
                     const isInCart = cartQty > 0;
-                    const isExpanded = expandedProduct === product._id;
+                    const isExpanded = expandedProduct === product.id;
 
                     return (
                       <div
-                        key={product._id}
-                        className={`p-3 transition-all ${
-                          isInCart ? "bg-red-50" : "hover:bg-gray-50"
-                        }`}
+                        key={product.id} // ✅ product.id
+                        className={`p-3 transition-all ${isInCart ? "bg-red-50" : "hover:bg-gray-50"}`}
                       >
                         <div
                           className="flex items-center justify-between cursor-pointer"
                           onClick={() => {
-                            if (isInCart) {
+                            if (isInCart)
                               setExpandedProduct(
-                                isExpanded ? null : product._id
+                                isExpanded ? null : product.id,
                               );
-                            }
                           }}
                         >
                           <div className="flex-1 min-w-0">
@@ -400,20 +370,16 @@ const Sales = () => {
                             </h3>
                             <div className="flex items-center gap-3 flex-wrap">
                               <span
-                                className={`text-xs font-medium px-2 py-0.5 rounded ${
-                                  product.quantity <= product.minQuantity
-                                    ? "bg-orange-100 text-orange-700"
-                                    : "bg-gray-100 text-gray-700"
-                                }`}
+                                className={`text-xs font-medium px-2 py-0.5 rounded ${product.quantity <= product.minQuantity ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-700"}`}
                               >
                                 Stock: {product.quantity}
                               </span>
                               <span className="text-xs text-gray-600">
-                                Buying Price: KSh{" "}
+                                Buying: KSh{" "}
                                 {(product.costPrice || 0).toLocaleString()}
                               </span>
                               <span className="text-xs text-red-600 font-semibold">
-                                Selling Price: KSh{" "}
+                                Selling: KSh{" "}
                                 {(product.price || 0).toLocaleString()}
                               </span>
                             </div>
@@ -441,8 +407,8 @@ const Sales = () => {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  updateProductQuantity(product._id, 1);
-                                  setExpandedProduct(product._id);
+                                  updateProductQuantity(product.id, 1);
+                                  setExpandedProduct(product.id);
                                 }}
                                 className="bg-red-600 hover:bg-red-700 text-white p-1.5 rounded transition-all"
                               >
@@ -457,46 +423,37 @@ const Sales = () => {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() =>
-                                  updateProductQuantity(
-                                    product._id,
-                                    cartQty - 1
-                                  )
+                                  updateProductQuantity(product.id, cartQty - 1)
                                 }
-                                className="bg-gray-300 hover:bg-gray-400 text-gray-900 p-2 rounded transition-all"
+                                className="bg-gray-300 hover:bg-gray-400 text-gray-900 p-2 rounded"
                               >
                                 <Minus size={16} />
                               </button>
-
                               <input
                                 type="number"
                                 value={cartQty}
                                 onChange={(e) =>
                                   updateProductQuantity(
-                                    product._id,
-                                    parseInt(e.target.value) || 0
+                                    product.id,
+                                    parseInt(e.target.value) || 0,
                                   )
                                 }
                                 className="w-20 text-center bg-white border border-gray-300 rounded py-1.5 text-sm font-semibold focus:outline-none focus:border-red-500"
                                 min="0"
                                 max={product.quantity}
                               />
-
                               <button
                                 onClick={() =>
-                                  updateProductQuantity(
-                                    product._id,
-                                    cartQty + 1
-                                  )
+                                  updateProductQuantity(product.id, cartQty + 1)
                                 }
                                 disabled={cartQty >= product.quantity}
-                                className="bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white p-2 rounded transition-all"
+                                className="bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white p-2 rounded"
                               >
                                 <Plus size={16} />
                               </button>
-
                               <button
-                                onClick={() => removeFromCart(product._id)}
-                                className="bg-orange-500 hover:bg-orange-600 text-white p-2 rounded transition-all ml-auto"
+                                onClick={() => removeFromCart(product.id)}
+                                className="bg-orange-500 hover:bg-orange-600 text-white p-2 rounded ml-auto"
                               >
                                 <Trash2 size={16} />
                               </button>
@@ -509,13 +466,13 @@ const Sales = () => {
                               <input
                                 type="number"
                                 value={
-                                  cart.find((item) => item._id === product._id)
+                                  cart.find((item) => item.id === product.id)
                                     ?.discount || 0
                                 }
                                 onChange={(e) =>
                                   updateDiscount(
-                                    product._id,
-                                    parseFloat(e.target.value) || 0
+                                    product.id,
+                                    parseFloat(e.target.value) || 0,
                                   )
                                 }
                                 className="flex-1 bg-white border border-gray-300 rounded px-2 py-1.5 text-sm font-semibold focus:outline-none focus:border-orange-500"
@@ -534,9 +491,8 @@ const Sales = () => {
                                 KSh{" "}
                                 {(
                                   ((product.price || 0) -
-                                    (cart.find(
-                                      (item) => item._id === product._id
-                                    )?.discount || 0)) *
+                                    (cart.find((item) => item.id === product.id)
+                                      ?.discount || 0)) *
                                   cartQty
                                 ).toLocaleString()}
                               </span>
@@ -555,8 +511,7 @@ const Sales = () => {
             <div className="bg-white p-4 rounded-lg shadow sticky top-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-red-600 flex items-center gap-2">
-                  <ShoppingCart size={24} />
-                  Cart
+                  <ShoppingCart size={24} /> Cart
                 </h2>
                 <div className="bg-red-600 text-white px-2.5 py-1 rounded-full text-sm font-bold">
                   {cart.length}
@@ -575,7 +530,7 @@ const Sales = () => {
                 ) : (
                   cart.map((item) => (
                     <div
-                      key={item._id}
+                      key={item.id}
                       className="bg-gray-50 p-2.5 rounded border border-gray-200"
                     >
                       <div className="flex justify-between items-start mb-1">
@@ -595,13 +550,12 @@ const Sales = () => {
                           )}
                         </div>
                         <button
-                          onClick={() => removeFromCart(item._id)}
-                          className="text-red-600 hover:bg-red-100 p-1 rounded transition-all ml-2"
+                          onClick={() => removeFromCart(item.id)}
+                          className="text-red-600 hover:bg-red-100 p-1 rounded ml-2"
                         >
                           <Trash2 size={14} />
                         </button>
                       </div>
-
                       <div className="flex justify-between items-center text-xs pt-2 border-t border-gray-200">
                         <span className="text-gray-600 font-medium">
                           Subtotal:
@@ -641,7 +595,6 @@ const Sales = () => {
                       KSh {total.toLocaleString()}
                     </span>
                   </div>
-
                   <div className="bg-green-50 p-2 rounded border border-green-200">
                     <div className="flex justify-between text-sm">
                       <span className="text-green-700 font-medium">
@@ -652,13 +605,11 @@ const Sales = () => {
                       </span>
                     </div>
                   </div>
-
                   <button
                     onClick={() => setShowCheckout(true)}
                     className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold mt-3 shadow transition-all flex items-center justify-center gap-2"
                   >
-                    <CheckCircle size={20} />
-                    Receive Payment
+                    <CheckCircle size={20} /> Receive Payment
                   </button>
                 </div>
               )}
@@ -677,7 +628,7 @@ const Sales = () => {
                 </h2>
                 <button
                   onClick={() => setShowCheckout(false)}
-                  className="text-gray-600 hover:bg-gray-100 p-2 rounded transition-all"
+                  className="text-gray-600 hover:bg-gray-100 p-2 rounded"
                 >
                   <X size={24} />
                 </button>
@@ -688,7 +639,7 @@ const Sales = () => {
                 <div className="space-y-2 text-sm">
                   {cart.map((item) => (
                     <div
-                      key={item._id}
+                      key={item.id}
                       className="flex justify-between text-gray-700"
                     >
                       <span>
@@ -731,11 +682,7 @@ const Sales = () => {
                     <button
                       key={method.value}
                       onClick={() => setPaymentMethod(method.value)}
-                      className={`p-3 rounded-lg border-2 transition-all font-semibold text-sm ${
-                        paymentMethod === method.value
-                          ? "border-red-600 bg-red-50 text-red-600"
-                          : "border-gray-300 hover:border-orange-500"
-                      }`}
+                      className={`p-3 rounded-lg border-2 transition-all font-semibold text-sm ${paymentMethod === method.value ? "border-red-600 bg-red-50 text-red-600" : "border-gray-300 hover:border-orange-500"}`}
                     >
                       <span className="mr-1">{method.icon}</span>
                       {method.label}
@@ -792,17 +739,11 @@ const Sales = () => {
                             {remaining > 0
                               ? "Credit:"
                               : remaining < 0
-                              ? "Change:"
-                              : "Balance:"}
+                                ? "Change:"
+                                : "Balance:"}
                           </span>
                           <span
-                            className={`font-bold ${
-                              remaining > 0
-                                ? "text-orange-600"
-                                : remaining < 0
-                                ? "text-green-600"
-                                : "text-gray-700"
-                            }`}
+                            className={`font-bold ${remaining > 0 ? "text-orange-600" : remaining < 0 ? "text-green-600" : "text-gray-700"}`}
                           >
                             KSh {Math.abs(remaining).toLocaleString()}
                           </span>
@@ -869,8 +810,7 @@ const Sales = () => {
                   onClick={processSale}
                   className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
                 >
-                  <CheckCircle size={20} />
-                  Complete Sale
+                  <CheckCircle size={20} /> Complete Sale
                 </button>
               </div>
             </div>
