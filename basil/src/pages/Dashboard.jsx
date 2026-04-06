@@ -97,7 +97,7 @@ const Landing = ({ onEnter }) => {
               letterSpacing: "0.05em",
             }}
           >
-            BASIL <span style={{ color: "#dc2626" }}>AUTOSPARES</span>
+            BAZIL <span style={{ color: "#dc2626" }}>AUTOSPARES</span>
           </span>
         </div>
         <div
